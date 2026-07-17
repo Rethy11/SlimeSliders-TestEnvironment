@@ -1040,7 +1040,7 @@
             let scatterCount = 15 + scaledLevel * 1.5;
             for(let i=0; i < scatterCount; i++) {
                 let pos = getValidSpawn(200, 25);
-                trees.push({ x: pos.x, y: pos.y, radius: 20 + Math.random() * 15, type: Math.random() > 0.7 ? 'rock' : 'tree', variant: Math.floor(Math.random()*3), seed: Math.random()*1000 });
+                trees.push({ x: pos.x, y: pos.y, radius: 20 + Math.random() * 15, type: Math.random() > 0.7 ? 'rock' : 'tree', variant: Math.floor(Math.random()*3), seed: Math.random()*300 });
             }
             buildTreeGrid();
 
