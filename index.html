@@ -1804,7 +1804,7 @@
             const rampPlaybackRate = (targetRate) => {
                 if (musicRampInterval) clearInterval(musicRampInterval);
                 
-                const steps = 4; // 4 updates over 1.5s = 100ms per step. Safe for HTML5 buffers.
+                const steps = 2; // 2 updates over 1.5s = 100ms per step. Safe for HTML5 buffers.
                 const stepTime = (musicRampSeconds * 1000) / steps;
                 const rateDelta = (targetRate - musicPlayer.playbackRate) / steps;
                 let currentStep = 0;
