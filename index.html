@@ -434,6 +434,59 @@
             return treeQueryResult;
         }
 
+        // Spatial hash grid for fences (same pattern as the tree grid above). Fences are solid -
+        // entities get pushed back out along the fence's normal, same shape of check as tree
+        // collision but against a line segment instead of a circle.
+        const fenceGridSize = 150;
+        let fenceGrid = new Map();
+        function buildFenceGrid() {
+            fenceGrid = new Map();
+            for (let f of fences) {
+                let key = Math.floor(f.midX / fenceGridSize) + '_' + Math.floor(f.midY / fenceGridSize);
+                let bucket = fenceGrid.get(key);
+                if (!bucket) { bucket = []; fenceGrid.set(key, bucket); }
+                bucket.push(f);
+            }
+        }
+        let fenceQueryResult = [];
+        function getNearbyFences(x, y) {
+            fenceQueryResult.length = 0;
+            let cx = Math.floor(x / fenceGridSize), cy = Math.floor(y / fenceGridSize);
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    let bucket = fenceGrid.get((cx + dx) + '_' + (cy + dy));
+                    if (bucket) for (let i = 0; i < bucket.length; i++) fenceQueryResult.push(bucket[i]);
+                }
+            }
+            return fenceQueryResult;
+        }
+        // Pushes (x, y) back out of any nearby fence segment it's overlapping (within `radius` of
+        // the segment plus the fence's own thickness), and returns the corrected point. Used by
+        // the player and enemies each tick so fences act as solid walls rather than decoration.
+        const fenceThickness = 10;
+        function resolveFenceCollision(x, y, radius) {
+            let nearFences = getNearbyFences(x, y);
+            for (let i = 0; i < nearFences.length; i++) {
+                let f = nearFences[i];
+                let dx = f.x2 - f.x1, dy = f.y2 - f.y1;
+                let lenSq = dx*dx + dy*dy;
+                let t = lenSq > 0 ? ((x - f.x1) * dx + (y - f.y1) * dy) / lenSq : 0;
+                t = Math.max(0, Math.min(1, t));
+                let cx = f.x1 + t * dx, cy = f.y1 + t * dy;
+                let ex = x - cx, ey = y - cy;
+                let distSq = ex*ex + ey*ey;
+                let threshold = radius + fenceThickness;
+                if (distSq < threshold * threshold) {
+                    let d = Math.sqrt(distSq);
+                    if (d < 0.0001) { ex = 1; ey = 0; d = 1; } // degenerate: sitting exactly on the segment
+                    let overlap = threshold - d;
+                    x += (ex / d) * overlap;
+                    y += (ey / d) * overlap;
+                }
+            }
+            return { x, y };
+        }
+
         // Persistent pool of render-queue entries. Every frame previously allocated a brand new
         // {type, obj} wrapper object for every single visible tree/enemy/item/particle, plus a
         // new array from items.filter()/powerups.filter(), plus 10+ new forEach closures, plus a
@@ -1332,6 +1385,7 @@
             goalTile.element = { type: 'goal' };
 
             buildFences();
+            buildFenceGrid();
 
             let chestTile = pickLandHex(300) || (landHexList.length ? landHexList[0] : null);
             if (chestTile) { chest = { x: chestTile.x, y: chestTile.y, radius: 25, collected: false }; chestTile.element = { type: 'chest' }; }
@@ -1359,7 +1413,7 @@
                 if (roll < treeRockChance) {
                     let type = Math.random() > 0.6 ? 'rock' : 'tree';
                     tile.element = { type };
-                    trees.push({ x: tile.x, y: tile.y, radius: 18 + Math.random() * 12, type, variant: Math.floor(Math.random()*3), seed: Math.random()*1000 });
+                    trees.push({ x: tile.x, y: tile.y, radius: 25 + Math.random() * 20, type, variant: Math.floor(Math.random()*3), seed: Math.random()*1000 });
                 } else if (roll < treeRockChance + coinChance) {
                     let itype = rollItemType(scaledLevel);
                     tile.element = { type: 'coin' };
@@ -2458,6 +2512,11 @@
                                     if (e.type === 'wanderer' || e.type === 'dasher') e.angle += (Math.random() * 0.5) + 0.5;
                                 }
                             }
+                            let fencePushed = resolveFenceCollision(e.x, e.y, e.radius);
+                            if (fencePushed.x !== e.x || fencePushed.y !== e.y) {
+                                if (e.type === 'wanderer' || e.type === 'dasher') e.angle += (Math.random() * 0.5) + 0.5;
+                                e.x = fencePushed.x; e.y = fencePushed.y;
+                            }
                         }
                         if (e.type !== 'hopper' || e.state === 'idle') {
                             let pdx = player.worldX - e.x, pdy = player.worldY - e.y;
@@ -2495,6 +2554,12 @@
                             let d = Math.sqrt(distSq);
                             let overlap = collisionDist - d; let angle = Math.atan2(dy, dx);
                             player.worldX += Math.cos(angle) * overlap; player.worldY += Math.sin(angle) * overlap; player.vx *= 0.6; player.vy *= 0.6;
+                        }
+                    }
+                    {
+                        let pushed = resolveFenceCollision(player.worldX, player.worldY, player.radius * 0.4);
+                        if (pushed.x !== player.worldX || pushed.y !== player.worldY) {
+                            player.worldX = pushed.x; player.worldY = pushed.y; player.vx *= 0.6; player.vy *= 0.6;
                         }
                     }
                     for (let hi = 0; hi < hives.length; hi++) {
@@ -2537,6 +2602,20 @@
                     let dx = p.x - t.x, dy = p.y - t.y;
                     let th = p.radius + t.radius * 0.8;
                     if (dx*dx + dy*dy < th*th) { hitObstacle = true; break; }
+                }
+                if (!hitObstacle) {
+                    let nearFencesProj = getNearbyFences(p.x, p.y);
+                    for (let fi = 0; fi < nearFencesProj.length; fi++) {
+                        let f = nearFencesProj[fi];
+                        let dx = f.x2 - f.x1, dy = f.y2 - f.y1;
+                        let lenSq = dx*dx + dy*dy;
+                        let t = lenSq > 0 ? ((p.x - f.x1) * dx + (p.y - f.y1) * dy) / lenSq : 0;
+                        t = Math.max(0, Math.min(1, t));
+                        let cx = f.x1 + t * dx, cy = f.y1 + t * dy;
+                        let ex = p.x - cx, ey = p.y - cy;
+                        let th = p.radius + fenceThickness;
+                        if (ex*ex + ey*ey < th*th) { hitObstacle = true; break; }
+                    }
                 }
                 if (hitObstacle) { projectiles.splice(i, 1); continue; }
                 
@@ -2611,35 +2690,93 @@
         }
 
         // The outer part of the map (everything past the honeycomb's edge) is open sky with
-        // slow-drifting clouds. It still counts as a hazard for gameplay purposes (isSafe treats
-        // it the same as a hole), it just isn't lava/water flavored out there.
+        // slow-drifting clouds, a fixed sun glow, a dim parallax cloud layer behind the main
+        // clouds, and sparse drifting birds for a bit more atmosphere than a flat gradient. It
+        // still counts as a hazard for gameplay purposes (isSafe treats it the same as a hole),
+        // it just isn't lava/water flavored out there.
         function drawSkyBackground() {
             let grad = ctx.createLinearGradient(0, camera.y, 0, camera.y + canvas.height);
-            grad.addColorStop(0, '#8fd3ff'); grad.addColorStop(1, '#cdeeff');
+            grad.addColorStop(0, '#6ec2ff'); grad.addColorStop(0.55, '#8fd3ff'); grad.addColorStop(1, '#d3f0ff');
             ctx.fillStyle = grad;
             ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+
+            // Soft sun glow, fixed in world space so it drifts past naturally as the camera moves
+            // rather than following the player around.
+            ctx.save();
+            let sunX = 500, sunY = -600;
+            let sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 750);
+            sunGrad.addColorStop(0, 'rgba(255,255,230,0.5)');
+            sunGrad.addColorStop(1, 'rgba(255,255,230,0)');
+            ctx.fillStyle = sunGrad;
+            ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+            ctx.restore();
+
+            const driftSpeed = 8;
+            let drift = (Date.now() / 1000) * driftSpeed;
+
+            // Dim, slower-drifting back layer for parallax depth.
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            drawCloudLayer(600, 340, drift * 0.4, 18, 16, 9.13);
+            ctx.restore();
+
+            // Sparse distant birds, far enough apart that they read as ambient detail.
+            ctx.save();
+            ctx.strokeStyle = 'rgba(50,55,65,0.55)';
+            ctx.lineWidth = 2;
+            drawBirdLayer(drift);
+            ctx.restore();
+
+            // Main puffy cloud layer, closest and brightest.
             ctx.save();
             ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            const spacingX = 420, spacingY = 260, driftSpeed = 8;
-            let drift = (Date.now() / 1000) * driftSpeed;
-            // Cloud identity (seed) comes from a stable integer tile index (i,j), never from the
-            // continuously-changing drifted position - only the final draw position depends on
-            // drift. Otherwise each cloud's "identity" kept shifting every frame, which read as
-            // clouds glitching/morphing instead of drifting smoothly.
+            drawCloudLayer(420, 260, drift, 30, 26, 0);
+            ctx.restore();
+        }
+        // Shared by both cloud layers (drawSkyBackground). Cloud identity (seed) comes from a
+        // stable integer tile index (i,j), never from the continuously-changing drifted position
+        // - only the final draw position depends on drift. Otherwise each cloud's "identity" kept
+        // shifting every frame, which read as clouds glitching/morphing instead of drifting
+        // smoothly. `seedOffset` gives each layer its own independent pattern.
+        function drawCloudLayer(spacingX, spacingY, drift, sizeBase, sizeVar, seedOffset) {
             let iStart = Math.floor((camera.x - drift) / spacingX) - 1;
             let iEnd = Math.ceil((camera.x + canvas.width - drift) / spacingX) + 1;
             let jStart = Math.floor(camera.y / spacingY) - 1;
             let jEnd = Math.ceil((camera.y + canvas.height) / spacingY) + 1;
             for (let i = iStart; i <= iEnd; i++) {
                 for (let j = jStart; j <= jEnd; j++) {
-                    let seed = Math.abs(Math.sin(i * 12.9898 + j * 78.233) * 43758.5453);
+                    let seed = Math.abs(Math.sin(i * 12.9898 + j * 78.233 + seedOffset) * 43758.5453);
                     seed -= Math.floor(seed);
                     let cx = i * spacingX + seed * 140 + drift;
                     let cy = j * spacingY + ((seed * 71) % 1) * 120;
-                    drawCloudPuff(cx, cy, 30 + seed * 26);
+                    drawCloudPuff(cx, cy, sizeBase + seed * sizeVar);
                 }
             }
-            ctx.restore();
+        }
+        // Sparse drifting V-shaped birds, gently bobbing, well-spaced so most grid cells are
+        // skipped and only a handful are ever on screen at once.
+        function drawBirdLayer(drift) {
+            const spacingX = 900, spacingY = 700;
+            let bdrift = drift * 1.5;
+            let iStart = Math.floor((camera.x - bdrift) / spacingX) - 1;
+            let iEnd = Math.ceil((camera.x + canvas.width - bdrift) / spacingX) + 1;
+            let jStart = Math.floor(camera.y / spacingY) - 1;
+            let jEnd = Math.ceil((camera.y + canvas.height) / spacingY) + 1;
+            for (let i = iStart; i <= iEnd; i++) {
+                for (let j = jStart; j <= jEnd; j++) {
+                    let seed = Math.abs(Math.sin(i * 34.55 + j * 91.7) * 21943.15);
+                    seed -= Math.floor(seed);
+                    if (seed > 0.4) continue; // keep birds sparse
+                    let bx = i * spacingX + seed * 300 + bdrift;
+                    let by = j * spacingY + ((seed * 53) % 1) * 300 + Math.sin(Date.now() / 900 + seed * 10) * 12;
+                    let wing = 7 + seed * 4;
+                    ctx.beginPath();
+                    ctx.moveTo(bx - wing, by + wing * 0.5);
+                    ctx.lineTo(bx, by);
+                    ctx.lineTo(bx + wing, by + wing * 0.5);
+                    ctx.stroke();
+                }
+            }
         }
         function drawCloudPuff(cx, cy, size) {
             ctx.beginPath();
