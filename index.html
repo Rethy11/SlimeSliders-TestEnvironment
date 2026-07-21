@@ -455,6 +455,9 @@
 
         let gameState = 'title';
         let previousState = 'title';
+        // True from the moment the first level is pre-generated on page load until it's
+        // actually consumed by startGame() - see the bottom of this script and startGame().
+        let levelPreGenerated = false;
         let level = 1;
         let score = 0;
         let totalCoins = parseInt(storage.get('landSlidersCoins')) || 0;
@@ -584,39 +587,159 @@
 
         // ==========================================
         // SECTION 3 - AUDIO ENGINE
-        // Sound effects still use the Web Audio API (procedural synthesis), but the background
-        // music tracks are now real, pre-rendered audio files played back with <audio> elements
-        // instead of being scheduled note-by-note through oscillators.
+        // Sound effects still use the Web Audio API (procedural synthesis). Background music
+        // is played through TWO <audio> elements - the normal loop, and a separate pre-rendered
+        // "danger" stinger for the final ten seconds - routed into Web Audio via
+        // MediaElementAudioSourceNode so volume is controlled with GainNodes instead of
+        // element.volume.
+        //
+        // Why: iOS Safari silently ignores HTMLMediaElement.volume (hardware buttons take
+        // precedence over JS-controlled volume by design), which is why the music slider had
+        // no effect on iOS. Routing through a GainNode sidesteps that restriction entirely.
+        //
+        // Design note: earlier versions tried to speed up the SAME track via playbackRate and
+        // crossfade into it, which required re-syncing the two elements' currentTime to the
+        // same musical position right before every crossfade - and that resync (an active seek
+        // on a playing element) was audibly glitchy no matter how few times it ran. The danger
+        // stinger is a distinct short audio file per track that always starts fresh from 0 when
+        // the crossfade begins, so there is no position to keep in sync and nothing to seek -
+        // the crossfade is a pure gain ramp between two already-correctly-positioned elements.
         // ==========================================
-        let actx;
+        let actx = null;
+        let audioGraphReady = false;
+        let musicGainMaster, gainNormal, gainFast, sfxGainBus;
 
         // Background music: one file per theme/level track, same order as `themes`/level index.
         const musicFiles = ['audio/forest.mp3', 'audio/desert.mp3', 'audio/snow.mp3', 'audio/volcano.mp3', 'audio/swamp.mp3', 'audio/autumn.mp3'];
+        // Matching "final ten seconds" danger stinger per track. These are separate, pre-made
+        // audio files (not the same song sped up at runtime) - point them at real assets before
+        // shipping. If you'd rather use one shared stinger for every theme, just repeat the
+        // same path in every slot.
+        const musicFilesDanger = ['audio/forest_danger.mp3', 'audio/desert_danger.mp3', 'audio/snow_danger.mp3', 'audio/volcano_danger.mp3', 'audio/swamp_danger.mp3', 'audio/autumn_danger.mp3'];
         let currentTrack = 0;
-        const musicPlayer = new Audio();
-        musicPlayer.loop = true;
-        musicPlayer.volume = userSettings.musicVol;
-        musicPlayer.preload = 'auto';
+        const musicRampSeconds = 0.4; // time to glide between normal and danger music
+        let musicDangerActive = false;
+        let dangerFadeToken = 0; // bumped on every setMusicDanger() call; lets a delayed pause() no-op if re-triggered mid-fade
 
-        // Restarts playback of the given track from the beginning (mirrors the old sequencer's
-        // behavior of resyncing all note indices to 0 at the start of every level).
+        const musicPlayerNormal = new Audio();
+        musicPlayerNormal.loop = true;
+        musicPlayerNormal.preload = 'auto';
+        musicPlayerNormal.playsInline = true;
+
+        const musicPlayerFast = new Audio();
+        musicPlayerFast.loop = true;
+        musicPlayerFast.preload = 'auto';
+        musicPlayerFast.playsInline = true;
+
+        // Builds the Web Audio graph exactly once, on the first user-gesture-triggered call to
+        // initAudio(). Must happen after a gesture or the AudioContext is created suspended.
+        function setupAudioGraph() {
+            if (audioGraphReady) return;
+            actx = new (window.AudioContext || window.webkitAudioContext)();
+
+            musicGainMaster = actx.createGain();
+            musicGainMaster.gain.value = userSettings.musicVol;
+            musicGainMaster.connect(actx.destination);
+
+            gainNormal = actx.createGain();
+            gainNormal.gain.value = 1;
+            gainNormal.connect(musicGainMaster);
+
+            gainFast = actx.createGain();
+            gainFast.gain.value = 0;
+            gainFast.connect(musicGainMaster);
+
+            actx.createMediaElementSource(musicPlayerNormal).connect(gainNormal);
+            actx.createMediaElementSource(musicPlayerFast).connect(gainFast);
+
+            sfxGainBus = actx.createGain();
+            sfxGainBus.gain.value = 1;
+            sfxGainBus.connect(actx.destination);
+
+            audioGraphReady = true;
+        }
+
+        // Loads the normal track and starts it immediately; loads (but does not play) its
+        // danger stinger, ready to start from 0 the instant it's needed. Safe to call before
+        // the audio graph exists (e.g. pre-generating the first level on page load, before any
+        // user gesture) - it just primes the elements silently and playback naturally starts
+        // once initAudio() unlocks things on the first tap.
         function playMusicTrack(idx) {
             currentTrack = idx;
-            musicPlayer.src = musicFiles[idx];
-            musicPlayer.currentTime = 0;
-            musicPlayer.volume = userSettings.musicVol;
-            musicPlayer.playbackRate = 1.0;
-            musicPlayer.play().catch(() => {});
+            musicPlayerNormal.src = musicFiles[idx];
+            musicPlayerFast.src = musicFilesDanger[idx];
+            musicPlayerNormal.currentTime = 0;
+            musicPlayerFast.currentTime = 0;
+            musicDangerActive = false;
+            musicSped = false;
+            dangerFadeToken++;
+            if (audioGraphReady) {
+                let now = actx.currentTime;
+                gainNormal.gain.cancelScheduledValues(now); gainNormal.gain.setValueAtTime(1, now);
+                gainFast.gain.cancelScheduledValues(now); gainFast.gain.setValueAtTime(0, now);
+                musicPlayerFast.pause();
+                musicPlayerNormal.play().catch(() => {});
+            }
+        }
+
+        // Crossfades between the normal music and the danger stinger using scheduled gain
+        // ramps (smooth and glitch-free). The stinger always starts from position 0, so there
+        // is nothing to keep in sync between the two elements - just a gain ramp.
+        function setMusicDanger(active) {
+            if (active === musicDangerActive) return;
+            musicDangerActive = active;
+            musicSped = active;
+            dangerFadeToken++;
+            let myFadeToken = dangerFadeToken;
+            if (!audioGraphReady) return;
+            if (musicPlayerNormal.paused) musicPlayerNormal.play().catch(() => {});
+            if (active) {
+                // Fresh start every time - this is the whole reason no resync is needed.
+                musicPlayerFast.currentTime = 0;
+                musicPlayerFast.play().catch(() => {});
+            }
+            let now = actx.currentTime;
+            // Ramp from wherever the gains currently sit (not a hardcoded endpoint) so
+            // re-triggering mid-fade never pops.
+            gainNormal.gain.cancelScheduledValues(now); gainNormal.gain.setValueAtTime(gainNormal.gain.value, now);
+            gainFast.gain.cancelScheduledValues(now); gainFast.gain.setValueAtTime(gainFast.gain.value, now);
+            gainNormal.gain.linearRampToValueAtTime(active ? 0 : 1, now + musicRampSeconds);
+            gainFast.gain.linearRampToValueAtTime(active ? 1 : 0, now + musicRampSeconds);
+            if (!active) {
+                // Once the fade-out finishes, stop the stinger so it's not silently decoding in
+                // the background - unless another crossfade has since started (token changed).
+                setTimeout(() => {
+                    if (dangerFadeToken === myFadeToken) musicPlayerFast.pause();
+                }, musicRampSeconds * 1000 + 50);
+            }
         }
 
         function initAudio() {
-            if (!actx) {
-                actx = new (window.AudioContext || window.webkitAudioContext)();
+            if (!audioGraphReady) {
+                setupAudioGraph();
                 if (gameState === 'title') currentTrack = Math.floor(Math.random() * musicFiles.length);
                 playMusicTrack(currentTrack);
             }
             if (actx.state === 'suspended') actx.resume();
-            if (musicPlayer.paused) musicPlayer.play().catch(() => {});
+            if (musicPlayerNormal.paused) musicPlayerNormal.play().catch(() => {});
+            if (musicDangerActive && musicPlayerFast.paused) musicPlayerFast.play().catch(() => {});
+        }
+
+        // Stops music when the game leaves the screen (tab switch, app backgrounded/closed as
+        // a PWA) instead of letting it keep playing silently in the background.
+        let musicWasPlayingBeforeHidden = false;
+        function pauseMusicForVisibility() {
+            if (!audioGraphReady) return;
+            musicWasPlayingBeforeHidden = !musicPlayerNormal.paused || !musicPlayerFast.paused;
+            musicPlayerNormal.pause();
+            musicPlayerFast.pause();
+            if (actx.state === 'running') actx.suspend();
+        }
+        function resumeMusicForVisibility() {
+            if (!audioGraphReady || !musicWasPlayingBeforeHidden) return;
+            if (actx.state === 'suspended') actx.resume();
+            musicPlayerNormal.play().catch(() => {});
+            if (musicDangerActive) musicPlayerFast.play().catch(() => {});
         }
 
         function playSFX(type, pitchMult = 1) {
@@ -1080,7 +1203,7 @@
         function buildFences() {
             fences = [];
             borderHexList = findBorderHexes();
-            const baseChance = 0.22, linkChance = 0.55, relaxPasses = 3;
+            const baseChance = 0.09, linkChance = 0.32, relaxPasses = 2;
             for (let tile of borderHexList) tile.hasFence = Math.random() < baseChance;
             for (let pass = 0; pass < relaxPasses; pass++) {
                 for (let tile of borderHexList) {
@@ -1170,14 +1293,37 @@
             let goalTile = hexTiles.get(goalKey);
             if (!goalTile) { let p = axialToPixel(goalHexCoord.q, goalHexCoord.r); goalTile = { q: goalHexCoord.q, r: goalHexCoord.r, x: p.x, y: p.y, type: 'land', element: null, hasFence: false, fenceCandidateDirs: null }; hexTiles.set(goalKey, goalTile); }
 
-            // ---- Carve interior holes: hazard only fills gaps fully surrounded by land, never
-            // touching the outer sky boundary, and never the player's spawn or the goal. ----
-            const holeChance = 0.11;
+            // ---- Carve interior hazard clusters: hazard only fills gaps fully surrounded by
+            // land, never touching the outer sky boundary, and never the player's spawn or the
+            // goal. Holes grow from a seed into a small cluster (rather than each tile rolling
+            // independently) so a hazard patch is almost never a single isolated hexagon. ----
+            function isInterior(tile) { return HEX_DIRS.every(d => hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r))); }
+            const holeSeedChance = 0.03, holeGrowChance = 0.55, minClusterSize = 2, maxClusterSize = 6;
+            let carved = new Set();
             for (let tile of hexTiles.values()) {
-                if (tile === goalTile) continue;
+                if (tile === goalTile || carved.has(tile)) continue;
                 if (dist(tile.x, tile.y, 0, 0) < 220) continue;
-                let interior = HEX_DIRS.every(d => hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r)));
-                if (interior && Math.random() < holeChance) tile.type = 'hole';
+                if (!isInterior(tile)) continue;
+                if (Math.random() >= holeSeedChance) continue;
+                let targetSize = minClusterSize + Math.floor(Math.random() * (maxClusterSize - minClusterSize + 1));
+                let cluster = [tile];
+                tile.type = 'hole'; carved.add(tile);
+                let frontier = [tile];
+                while (cluster.length < targetSize && frontier.length) {
+                    let cur = frontier.shift();
+                    let dirsShuffled = HEX_DIRS.slice().sort(() => Math.random() - 0.5);
+                    for (let d of dirsShuffled) {
+                        if (cluster.length >= targetSize) break;
+                        let nb = hexTiles.get(hexKey(cur.q + d.q, cur.r + d.r));
+                        if (!nb || nb === goalTile || carved.has(nb) || nb.type === 'hole') continue;
+                        if (dist(nb.x, nb.y, 0, 0) < 220) continue;
+                        if (!isInterior(nb)) continue;
+                        // Force the very first neighbor so a hole is almost never left as a lone
+                        // tile; subsequent growth is probabilistic to keep clusters small.
+                        let forceAdd = cluster.length === 1;
+                        if (forceAdd || Math.random() < holeGrowChance) { nb.type = 'hole'; carved.add(nb); cluster.push(nb); frontier.push(nb); }
+                    }
+                }
             }
             landHexList = []; holeHexList = [];
             for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
@@ -1198,17 +1344,16 @@
                 }
             }
 
-            // ---- Sparse single-element scatter: every remaining empty land hex gets one roll
-            // for a tree/rock or a coin (trees/rocks noticeably sparser than the old blob-edge
-            // ring + scatter passes). Chance is derived from the desired total count divided by
-            // how many hexes are actually available, so density stays sane regardless of map size.
+            // ---- Single-element scatter: every remaining empty land hex rolls independently
+            // for a tree/rock or a coin. Chances are flat per-hex (scaling gently with level)
+            // rather than derived from a target count, so density is easy to reason about and
+            // doesn't collapse on smaller maps - still noticeably sparser than the old blob-edge
+            // ring + scatter passes, without being empty.
             let openTiles = landHexList.filter(t => !t.element && dist(t.x, t.y, 0, 0) >= 200 &&
                 dist(t.x, t.y, goal.x, goal.y) >= goal.radius + 50 &&
                 distToSegment(t.x, t.y, 0, 0, goal.x, goal.y) >= 70);
-            let desiredTreesRocks = Math.round((15 + scaledLevel * 1.5) * 0.55);
-            let desiredCoins = Math.round(25 + scaledLevel * 2.5);
-            let treeRockChance = openTiles.length ? Math.min(0.35, desiredTreesRocks / openTiles.length) : 0;
-            let coinChance = openTiles.length ? Math.min(0.5, desiredCoins / openTiles.length) : 0;
+            let treeRockChance = Math.min(0.42, 0.24 + scaledLevel * 0.006);
+            let coinChance = Math.min(0.45, 0.18 + scaledLevel * 0.008);
             for (let tile of openTiles) {
                 let roll = Math.random();
                 if (roll < treeRockChance) {
@@ -1328,8 +1473,11 @@
             displayCtx.imageSmoothingEnabled = false;
         }
         window.addEventListener('resize', resize); resize();
-        document.addEventListener('visibilitychange', () => { if (document.hidden) flushCoinsIfDirty(); });
-        window.addEventListener('pagehide', flushCoinsIfDirty);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) { flushCoinsIfDirty(); pauseMusicForVisibility(); }
+            else { resumeMusicForVisibility(); }
+        });
+        window.addEventListener('pagehide', () => { flushCoinsIfDirty(); pauseMusicForVisibility(); });
         document.getElementById('hud-coin-icon').src = iconDataURL('coin', 22);
         document.getElementById('unlock-star-l').src = iconDataURL('star', 20);
         document.getElementById('unlock-star-r').src = iconDataURL('star', 20);
@@ -1880,6 +2028,8 @@
         }
 
         function toggleAlmanac() {
+            // Don't allow Almanac to open on top of Settings - it has to be closed first.
+            if (document.getElementById('settings-modal').style.display === 'block') return;
             if (gameState === 'playing') { previousState = gameState;
             gameState = 'paused'; }
             else if (gameState !== 'paused') { previousState = gameState;
@@ -1888,6 +2038,8 @@
         }
 
         function toggleSettings() {
+            // Don't allow Settings to open on top of Almanac - it has to be closed first.
+            if (document.getElementById('almanac-modal').style.display === 'block') return;
             if (gameState === 'playing') { previousState = gameState;
             gameState = 'paused'; }
             else if (gameState !== 'paused') { previousState = gameState;
@@ -1948,19 +2100,10 @@
         }
 
         // Drives the dramatic "10, 9, 8..." countdown in the final ten seconds of the level timer,
-        // plus the sped-up music that goes with it. Only restarts the pop animation and touches the
-        // music's playbackRate when the displayed second actually changes, rather than every tick.
-
-        // Drives the dramatic "10, 9, 8..." countdown in the final ten seconds of the level timer,
-        // plus the sped-up music that goes with it. The countdown pop only restarts when the
-        // displayed second actually changes, but the music rate is nudged toward its target every
-        // tick so it winds up/down smoothly instead of snapping instantly.
+        // plus the danger stinger that goes with it. The countdown pop only restarts when the
+        // displayed second actually changes; setMusicDanger() itself no-ops on repeat calls, so
+        // the stinger only actually starts/stops on the tick the state changes.
         function updateTimeDangerEffects() {
-            const musicNormalRate = 1.0;
-            const musicDangerRate = 1.4;
-            const musicRampSeconds = 1.5; // time to glide from normal to max danger speed
-            const musicRatePerTick = (musicDangerRate - musicNormalRate) / (musicRampSeconds * 60);
-
             if (timeLeft <= 10 && timeLeft > 0) {
                 let displaySec = Math.ceil(timeLeft);
                 if (displaySec !== lastCountdownSecond) {
@@ -1971,18 +2114,10 @@
                     el.classList.remove('countdown-pop');
                     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('countdown-pop')));
                 }
-                musicSped = true;
-                if (musicPlayer.playbackRate < musicDangerRate) {
-                    musicPlayer.playbackRate = Math.min(musicDangerRate, musicPlayer.playbackRate + musicRatePerTick);
-                }
+                setMusicDanger(true);
             } else {
                 if (lastCountdownSecond !== -1) { lastCountdownSecond = -1; domRefs.timeCountdown.style.display = 'none'; }
-                if (musicSped) {
-                    if (musicPlayer.playbackRate > musicNormalRate) {
-                        musicPlayer.playbackRate = Math.max(musicNormalRate, musicPlayer.playbackRate - musicRatePerTick);
-                    }
-                    if (musicPlayer.playbackRate <= musicNormalRate) musicSped = false;
-                }
+                setMusicDanger(false);
             }
         }
 
@@ -1998,7 +2133,7 @@
         }
 
         // Setup Event Listeners
-        document.getElementById('play-btn').addEventListener('click', () => { initAudio(); startGame(); });
+        document.getElementById('play-btn').addEventListener('click', () => { startGame(); });
         document.getElementById('title-shop-btn').addEventListener('click', toggleShop);
         document.getElementById('go-shop-btn').addEventListener('click', toggleShop);
         document.getElementById('level-continue-btn').addEventListener('click', nextLevel);
@@ -2014,7 +2149,7 @@
         });
         document.getElementById('go-play-again').addEventListener('click', () => { document.getElementById('game-over-screen').style.display = 'none'; resetGame(); startGame(); });
         document.getElementById('go-main-menu').addEventListener('click', () => { document.getElementById('game-over-screen').style.display = 'none'; document.getElementById('title-screen').style.display = 'flex'; document.querySelectorAll('.corner-icon').forEach(el => el.style.display = 'none'); resetGame(); gameState = 'title'; });
-        document.getElementById('music-slider').addEventListener('input', e => { userSettings.musicVol = parseFloat(e.target.value); storage.set('ls_music', userSettings.musicVol); musicPlayer.volume = userSettings.musicVol; initAudio(); });
+        document.getElementById('music-slider').addEventListener('input', e => { userSettings.musicVol = parseFloat(e.target.value); storage.set('ls_music', userSettings.musicVol); if (musicGainMaster) musicGainMaster.gain.value = userSettings.musicVol; initAudio(); });
         document.getElementById('sfx-slider').addEventListener('input', e => { userSettings.sfxVol = parseFloat(e.target.value); storage.set('ls_sfx', userSettings.sfxVol); playSFX('click'); initAudio(); });
         document.getElementById('controls-toggle').addEventListener('click', e => { userSettings.invert = !userSettings.invert; storage.set('ls_invert', userSettings.invert); syncSettingsUI(); });
         syncSettingsUI();
@@ -2485,14 +2620,23 @@
             ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
             ctx.save();
             ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            let t = Date.now() / 1000;
-            const spacingX = 420, spacingY = 260, driftSpeed = 10;
-            let baseX = camera.x - (((camera.x + t*driftSpeed) % spacingX) + spacingX) % spacingX - spacingX;
-            let baseY = camera.y - (camera.y % spacingY) - spacingY;
-            for (let x = baseX; x < camera.x + canvas.width + spacingX; x += spacingX) {
-                for (let y = baseY; y < camera.y + canvas.height + spacingY; y += spacingY) {
-                    let seed = Math.abs(Math.sin(x * 0.013 + y * 0.029));
-                    drawCloudPuff(x + seed * 140, y + ((seed * 71) % 1) * 120, 30 + seed * 26);
+            const spacingX = 420, spacingY = 260, driftSpeed = 8;
+            let drift = (Date.now() / 1000) * driftSpeed;
+            // Cloud identity (seed) comes from a stable integer tile index (i,j), never from the
+            // continuously-changing drifted position - only the final draw position depends on
+            // drift. Otherwise each cloud's "identity" kept shifting every frame, which read as
+            // clouds glitching/morphing instead of drifting smoothly.
+            let iStart = Math.floor((camera.x - drift) / spacingX) - 1;
+            let iEnd = Math.ceil((camera.x + canvas.width - drift) / spacingX) + 1;
+            let jStart = Math.floor(camera.y / spacingY) - 1;
+            let jEnd = Math.ceil((camera.y + canvas.height) / spacingY) + 1;
+            for (let i = iStart; i <= iEnd; i++) {
+                for (let j = jStart; j <= jEnd; j++) {
+                    let seed = Math.abs(Math.sin(i * 12.9898 + j * 78.233) * 43758.5453);
+                    seed -= Math.floor(seed);
+                    let cx = i * spacingX + seed * 140 + drift;
+                    let cy = j * spacingY + ((seed * 71) % 1) * 120;
+                    drawCloudPuff(cx, cy, 30 + seed * 26);
                 }
             }
             ctx.restore();
@@ -3101,7 +3245,22 @@
             gameState = 'playing'; camera.x = player.worldX - canvas.width / 2;
             camera.y = player.worldY - canvas.height / 2;
             camera.prevX = camera.x; camera.prevY = camera.y;
-            generateLevel();
+            // Unlock/build the audio graph directly off this click, then load the level's own
+            // track straight away - previously this went through initAudio() (which picks a
+            // random *title* track) immediately followed by a second track load to correct it,
+            // two rapid back-to-back src/currentTime/play() resets on both music elements that
+            // could leave the "fast" element stalled or out of sync by the time it was needed.
+            if (!audioGraphReady) setupAudioGraph();
+            if (actx.state === 'suspended') actx.resume();
+            if (levelPreGenerated) {
+                // Level 1 was already fully generated at page load and is sitting ready to go -
+                // just make sure its track is loaded now that this user gesture has unlocked
+                // audio, rather than throwing the pre-built level away and generating a new one.
+                levelPreGenerated = false;
+                playMusicTrack((level - 1) % musicFiles.length);
+            } else {
+                generateLevel();
+            }
         }
 
         function resetGame() {
@@ -3128,7 +3287,7 @@
             // still check what killed them or adjust settings from the Game Over screen.
             document.getElementById('game-over-screen').style.display = 'flex';
             lastCountdownSecond = -1;
-            if (musicSped) { musicSped = false; musicPlayer.playbackRate = 1.0; }
+            setMusicDanger(false);
             updateHazardVignette(0);
             if (level > highestLevel) { highestLevel = level; storage.set('landSlidersBestLevel', highestLevel);
             }
@@ -3266,6 +3425,14 @@
 
             requestAnimationFrame(gameLoop);
         }
+
+        // Generate the first level immediately so it's fully ready the moment the player taps
+        // Play, instead of building it inside the click handler where any delay is felt as
+        // input lag. gameState is still 'title' at this point and update() only advances real
+        // gameplay logic (timer, enemies, spawns, etc.) once gameState === 'playing', so the
+        // world exists but the game itself stays paused until startGame() runs.
+        generateLevel();
+        levelPreGenerated = true;
 
         requestAnimationFrame(gameLoop);
 
