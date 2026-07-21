@@ -1279,6 +1279,44 @@
             }
         }
 
+        // Smooths the raw hex-discretized footprint so its outer silhouette doesn't read as an
+        // obviously hexagonal/jagged edge: a few cellular-automaton style passes that (1) fill
+        // any missing cell that's almost entirely surrounded by existing tiles (a one-hex notch
+        // bitten out of the shape) and (2) drop any existing tile that's barely attached to the
+        // rest of the map (a one-hex spur sticking off the edge). Runs on the footprint only,
+        // before the goal is pinned or holes are carved, so it never has to worry about undoing
+        // either of those.
+        function smoothFootprint(passes) {
+            for (let pass = 0; pass < passes; pass++) {
+                let candidates = new Set();
+                for (let tile of hexTiles.values()) {
+                    for (let d of HEX_DIRS) {
+                        let key = hexKey(tile.q + d.q, tile.r + d.r);
+                        if (!hexTiles.has(key)) candidates.add(key);
+                    }
+                }
+                let toAdd = [];
+                for (let key of candidates) {
+                    let [q, r] = key.split(',').map(Number);
+                    let count = 0;
+                    for (let d of HEX_DIRS) if (hexTiles.has(hexKey(q + d.q, r + d.r))) count++;
+                    if (count >= 5) toAdd.push({ q, r });
+                }
+                for (let { q, r } of toAdd) {
+                    let p = axialToPixel(q, r);
+                    hexTiles.set(hexKey(q, r), { q, r, x: p.x, y: p.y, type: 'land', element: null, hasFence: false, fenceCandidateDirs: null });
+                }
+
+                let toRemove = [];
+                for (let tile of hexTiles.values()) {
+                    let count = 0;
+                    for (let d of HEX_DIRS) if (hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r))) count++;
+                    if (count <= 1) toRemove.push(tile);
+                }
+                for (let tile of toRemove) hexTiles.delete(hexKey(tile.q, tile.r));
+            }
+        }
+
         function generateLevel() {
             items = []; enemies = []; trees = []; hives = []; decorations = []; projectiles = []; icicles = [];
             flameParticles = []; leaves = []; splashes = []; powerups = []; chest = null;
@@ -1339,6 +1377,7 @@
                     if (inFootprint(p.x, p.y)) hexTiles.set(hexKey(q, r), { q, r, x: p.x, y: p.y, type: 'land', element: null, hasFence: false, fenceCandidateDirs: null });
                 }
             }
+            smoothFootprint(2);
 
             // Pin down the goal's hex before hole-carving so it's never eaten by a hole.
             let goalHexCoord = pixelToAxial(endNode.x, endNode.y);
@@ -2813,20 +2852,38 @@
         // never the outer edge of the map, which is sky instead (see drawSkyBackground).
         function drawHazardHoles() {
             let hz = currentTheme.hazard;
+
+            // Fill+texture as a single unioned path (like the land tiles do) rather than per-hex,
+            // so adjacent hole tiles in the same cluster don't leave an anti-aliased seam where
+            // their fills meet.
+            ctx.save();
+            pathHexUnion(ctx, holeHexList);
+            ctx.fillStyle = hz.color; ctx.fill();
+            ctx.clip();
             for (let tile of holeHexList) {
                 if (!isOnScreen(tile.x, tile.y, HEX_SIZE * 2)) continue;
-                let c = hexCorners(tile.x, tile.y);
-                ctx.save();
-                ctx.beginPath(); ctx.moveTo(c[0].x, c[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(c[i].x, c[i].y); ctx.closePath();
-                ctx.fillStyle = hz.color; ctx.fill();
-                ctx.clip();
                 drawHazardTexture(tile.x, tile.y, HEX_SIZE);
-                ctx.restore();
-                ctx.save();
-                ctx.lineWidth = 4; ctx.strokeStyle = hz.edge;
-                ctx.beginPath(); ctx.moveTo(c[0].x, c[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(c[i].x, c[i].y); ctx.closePath(); ctx.stroke();
-                ctx.restore();
             }
+            ctx.restore();
+
+            // Outline pass: only stroke a hole hex's edges where the neighbor across that edge
+            // is NOT also a hole (i.e. it borders land or the sky). Edges shared between two
+            // hole tiles in the same lake/lava/ice cluster are skipped entirely, so the cluster
+            // reads as one continuous flush-bordered pool instead of a honeycomb of outlines.
+            ctx.save();
+            ctx.lineWidth = 4; ctx.strokeStyle = hz.edge;
+            ctx.beginPath();
+            for (let tile of holeHexList) {
+                if (!isOnScreen(tile.x, tile.y, HEX_SIZE * 2)) continue;
+                for (let d of HEX_DIRS) {
+                    let nb = hexTiles.get(hexKey(tile.q + d.q, tile.r + d.r));
+                    if (nb && nb.type === 'hole') continue;
+                    let [p1, p2] = hexEdgeCorners(tile, d.q, d.r);
+                    ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+                }
+            }
+            ctx.stroke();
+            ctx.restore();
         }
 
         function drawCharacterModel(x, y, vx, vy, radius, colorId, isJiggling, hatId, targetCtx) {
