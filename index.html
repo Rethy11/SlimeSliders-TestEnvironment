@@ -593,6 +593,21 @@
         }
         function rqSortCompare(a, b) { return a.sortY - b.sortY; }
 
+        // PERF: gradient caches for per-particle effects drawn every frame (icicles, flame
+        // particles - see the render loop in SECTION 8). CanvasGradient objects are relatively
+        // expensive to build, and these were being rebuilt from scratch for every single
+        // particle on every single frame - a burst-spawning item (e.g. Spikes' ice-nova volley)
+        // can have a dozen+ alive at once, all needing a gradient every tick just to stay drawn.
+        // Reused/bucketed here instead - see the icicle/flame branches of the render loop for
+        // why each one is safe to cache (identical output every time vs. bucketed by size).
+        let icicleGradientCache = null;
+        const flameGradientCache = new Map();
+        // PERF: see drawSkyBackground (SECTION 8) - both cached the same way, keyed off
+        // canvas.height so a resize correctly invalidates and rebuilds them.
+        let skyGradientCache = null;
+        let skyGradientCacheH = -1;
+        let sunGradientCache = null;
+
         let gameState = 'title';
         let previousState = 'title';
         // True from the moment the first level is pre-generated on page load until it's
@@ -684,6 +699,10 @@
             { id: 'ice',       name: 'Ice Nova',    desc: 'Ice Nova',    color: '#7fdbff', duration: 7, radius: 0,   tick: 1.1,  mode: 'nova',     coinDrop: [2,4] },
             { id: 'rampage',   name: 'Rampage',     desc: 'Invincible',  color: '#ff477e', duration: 8, radius: 0,   tick: 0,    mode: 'contact',  coinDrop: [3,5] }
         ];
+        // PERF: id -> object lookup, built once. powerupTypes.find(...) was run every single
+        // frame for every rendered/active powerup (render loop + update() + pickup handling) -
+        // a Map lookup replaces that repeated linear scan with a constant-time get().
+        const powerupTypesById = new Map(powerupTypes.map(p => [p.id, p]));
         
         // Gacha Loot Tables
         const basicSkins = [
@@ -698,6 +717,9 @@
             { id: "gray", name: "Gray", color: "#8d99ae" }, { id: "brown", name: "Brown", color: "#795548" },
             { id: "teal", name: "Teal", color: "#009688" }, { id: "lime", name: "Lime", color: "#cddc39" }
         ];
+        // PERF: same reasoning as powerupTypesById - drawCharacterModel runs this lookup every
+        // single frame for every rendered character with a basic (non-rare) skin equipped.
+        const basicSkinsById = new Map(basicSkins.map(s => [s.id, s]));
 
         const rareSkins = [
             { id: "rainbow", name: "Rainbow", preview: "linear-gradient(45deg, red, orange, yellow, green, blue, purple)", isAnimated: true },
@@ -2242,7 +2264,7 @@
             domRefs.timerFill.style.width = Math.max(0, (timeLeft / MAX_TIME) * 100) + "%";
             if (timeLeft <= 3) domRefs.timerContainer.classList.add('danger'); else domRefs.timerContainer.classList.remove('danger');
             if (player.activePowerup) {
-                let pu = powerupTypes.find(p => p.id === player.activePowerup);
+                let pu = powerupTypesById.get(player.activePowerup);
                 domRefs.powerupIndicator.style.display = 'flex';
                 domRefs.puIcon.src = iconDataURL(pu.id, 32); domRefs.puDesc.innerText = pu.desc;
                 domRefs.puFill.style.width = Math.max(0, (player.powerupTimeLeft / player.powerupDuration) * 100) + '%';
@@ -2382,7 +2404,7 @@
         function getLightningTargetWorld() { return { x: pointerScreenX + camera.x, y: pointerScreenY + camera.y }; }
 
         function applyPowerupEffect() {
-            let pu = powerupTypes.find(p => p.id === player.activePowerup); if (!pu) return;
+            let pu = powerupTypesById.get(player.activePowerup); if (!pu) return;
             if (pu.id === 'lightning') playSFX('lightning');
 
             if (pu.mode === 'contact') {
@@ -2531,7 +2553,7 @@
 
                     powerups.forEach(p => {
                         if (!p.collected && dist(player.worldX, player.worldY, p.x, p.y) < player.radius + p.radius) {
-                            p.collected = true; let pu = powerupTypes.find(pt => pt.id === p.typeId);
+                            p.collected = true; let pu = powerupTypesById.get(p.typeId);
                             player.activePowerup = pu.id; player.powerupDuration = pu.duration; player.powerupTimeLeft = pu.duration; player.powerupTickTimer = pu.tick; 
                             screenShake = 12; playSFX('powerup_pickup'); updateHUD();
                         }
@@ -2824,20 +2846,38 @@
         // still counts as a hazard for gameplay purposes (isSafe treats it the same as a hole),
         // it just isn't lava/water flavored out there.
         function drawSkyBackground() {
-            let grad = ctx.createLinearGradient(0, camera.y, 0, camera.y + canvas.height);
-            grad.addColorStop(0, '#6ec2ff'); grad.addColorStop(0.55, '#8fd3ff'); grad.addColorStop(1, '#d3f0ff');
-            ctx.fillStyle = grad;
-            ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+            // PERF: both gradients below used to be rebuilt from scratch every single frame,
+            // unconditionally, with camera.x/y baked directly into their coordinates. A
+            // CanvasGradient's control points are evaluated against whatever transform is
+            // active when it's painted (not the transform at creation time), so baking the
+            // camera position in meant a fresh gradient object was required every single frame
+            // just to stay aligned as the camera moved - guaranteed cost on every frame,
+            // regardless of gameplay. Translating to the camera's position first and building
+            // both gradients in local (0,0)-relative space instead makes them genuinely
+            // constant (same colors, same fixed sun position/radius every time), so they can be
+            // created once and reused forever; only a canvas resize invalidates them.
+            ctx.save();
+            ctx.translate(camera.x, camera.y);
+            if (!skyGradientCache || skyGradientCacheH !== canvas.height) {
+                skyGradientCache = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                skyGradientCache.addColorStop(0, '#6ec2ff'); skyGradientCache.addColorStop(0.55, '#8fd3ff'); skyGradientCache.addColorStop(1, '#d3f0ff');
+                skyGradientCacheH = canvas.height;
+            }
+            ctx.fillStyle = skyGradientCache;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Soft sun glow, fixed in world space so it drifts past naturally as the camera moves
             // rather than following the player around.
             ctx.save();
             let sunX = 500, sunY = -600;
-            let sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 750);
-            sunGrad.addColorStop(0, 'rgba(255,255,230,0.5)');
-            sunGrad.addColorStop(1, 'rgba(255,255,230,0)');
-            ctx.fillStyle = sunGrad;
-            ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+            if (!sunGradientCache) {
+                sunGradientCache = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 750);
+                sunGradientCache.addColorStop(0, 'rgba(255,255,230,0.5)');
+                sunGradientCache.addColorStop(1, 'rgba(255,255,230,0)');
+            }
+            ctx.fillStyle = sunGradientCache;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
             ctx.restore();
 
             const driftSpeed = 8;
@@ -2980,7 +3020,7 @@
             let fillColor = '#00ffcc'; // Fallback
             let drawSpecial = null;
             
-            let basicMatch = basicSkins.find(s => s.id === colorId);
+            let basicMatch = basicSkinsById.get(colorId);
             if (basicMatch) fillColor = basicMatch.color;
             else if (colorId === 'rainbow') { fillColor = `hsl(${(t / 5) % 360}, 100%, 50%)`; drawSpecial = 'rainbow'; }
             else if (colorId === 'gold') {
@@ -3386,7 +3426,7 @@
                     if (window.LootSprites && window.LootSprites[item.type]) window.LootSprites[item.type](ctx, c);
                 }
                 else if (item.type === 'powerup') {
-                    let p = item.obj; let pu = powerupTypes.find(pt => pt.id === p.typeId); let bob = Math.sin(Date.now()/260 + (p.spawnSeed||0)) * 6; let spin = (Date.now()/450) % (Math.PI*2);
+                    let p = item.obj; let pu = powerupTypesById.get(p.typeId); let bob = Math.sin(Date.now()/260 + (p.spawnSeed||0)) * 6; let spin = (Date.now()/450) % (Math.PI*2);
                     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + p.radius*0.9, p.radius*0.9, p.radius*0.4, 0, 0, Math.PI*2); ctx.fill();
                     ctx.save(); ctx.globalAlpha = 0.2 + 0.15*Math.sin(Date.now()/250); ctx.fillStyle = pu.color; ctx.beginPath(); ctx.arc(p.x, p.y + bob, p.radius*1.7, 0, Math.PI*2); ctx.fill(); ctx.restore();
                     ctx.save(); ctx.translate(p.x, p.y + bob); ctx.rotate(spin); ctx.fillStyle = pu.color; ctx.beginPath(); ctx.arc(0, 0, p.radius, 0, Math.PI*2); ctx.fill();
@@ -3426,15 +3466,39 @@
                 else if (item.type === 'icicle') {
                     let ic = item.obj;
                     ctx.save(); ctx.translate(ic.x, ic.y); ctx.rotate(ic.angle);
-                    let grad = ctx.createLinearGradient(-14, 0, 10, 0); grad.addColorStop(0, 'rgba(127,219,255,0)'); grad.addColorStop(1, '#e8fbff'); ctx.fillStyle = grad;
+                    // PERF: this gradient is drawn entirely in local (post-translate/rotate)
+                    // space with fixed coordinates (-14,0)-(10,0) and fixed color stops - it is
+                    // byte-for-byte identical on every single icicle, every single frame. It was
+                    // being recreated from scratch per-icicle per-frame (a burst item like
+                    // Spikes can have 10+ alive at once); building it once and reusing the same
+                    // CanvasGradient object is free and visually identical.
+                    if (!icicleGradientCache) {
+                        icicleGradientCache = ctx.createLinearGradient(-14, 0, 10, 0);
+                        icicleGradientCache.addColorStop(0, 'rgba(127,219,255,0)'); icicleGradientCache.addColorStop(1, '#e8fbff');
+                    }
+                    ctx.fillStyle = icicleGradientCache;
                     ctx.beginPath(); ctx.moveTo(-14, -3); ctx.lineTo(8, -1.5); ctx.lineTo(12, 0); ctx.lineTo(8, 1.5); ctx.lineTo(-14, 3); ctx.closePath(); ctx.fill();
                     ctx.strokeStyle = '#0a2e44'; ctx.lineWidth = 0.6; ctx.stroke(); ctx.restore();
                 }
                 else if (item.type === 'flame') {
-                    let f = item.obj; let alpha = Math.max(0, f.life / f.maxLife); ctx.save(); ctx.globalAlpha = alpha;
-                    let grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size);
-                    grad.addColorStop(0, '#fff3b0'); grad.addColorStop(0.5, '#ff9f1c'); grad.addColorStop(1, '#ff6b35'); ctx.fillStyle = grad;
-                    ctx.beginPath(); ctx.arc(f.x, f.y, f.size * alpha, 0, Math.PI*2); ctx.fill(); ctx.restore();
+                    let f = item.obj; let alpha = Math.max(0, f.life / f.maxLife);
+                    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(f.x, f.y);
+                    // PERF: was ctx.createRadialGradient(f.x, f.y, ...) - a brand new gradient
+                    // object per flame particle per frame, at every world position they ever
+                    // occupy (so it could never be reused). Translating to the particle's
+                    // position first and building the gradient in local (0,0) space instead
+                    // means the only thing that actually changes its appearance is `size` -
+                    // bucketing by rounded size lets every flame particle share a small, fixed
+                    // pool of cached gradients instead of allocating a fresh one each frame.
+                    let sizeKey = Math.max(1, Math.round(f.size));
+                    let grad = flameGradientCache.get(sizeKey);
+                    if (!grad) {
+                        grad = ctx.createRadialGradient(0, 0, 0, 0, 0, sizeKey);
+                        grad.addColorStop(0, '#fff3b0'); grad.addColorStop(0.5, '#ff9f1c'); grad.addColorStop(1, '#ff6b35');
+                        flameGradientCache.set(sizeKey, grad);
+                    }
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(0, 0, f.size * alpha, 0, Math.PI*2); ctx.fill(); ctx.restore();
                 }
                 else if (item.type === 'enemy') {
                     let e = item.obj;
