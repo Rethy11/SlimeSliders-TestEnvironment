@@ -388,12 +388,22 @@
             if (coinsDirty) { storage.set('landSlidersCoins', totalCoins); coinsDirty = false; }
         }
 
+        // PERF: every spatial-hash grid below (trees/decorations/fences/land-tiles/safe-cache)
+        // used to key its Map with a template-string concatenation ("cx + '_' + cy"). That
+        // allocates a brand-new string and re-hashes its characters on every single lookup -
+        // and lookups happen dozens of times per entity per tick (9 buckets per query x every
+        // tree/fence/projectile/enemy check, every frame). Packing the two integers into one
+        // number instead gives V8 a plain integer Map key: no allocation, no string hashing,
+        // just numeric equality. Safe for any coordinate/cell-index magnitude this game
+        // produces (levels are nowhere near the ~5,000,000-unit bound this leaves headroom for).
+        function packGridKey(a, b) { return a * 10000000 + b; }
+
         // Memoizes isSafe() results for the fixed grid-dust decoration pass in draw(), since
         // those world coordinates repeat across many consecutive frames as the camera pans and
         // isSafe() itself has to scan every land blob. Cleared whenever a new level is generated.
         let safeGridCache = new Map();
         function isSafeGridCached(x, y) {
-            let key = x + '_' + y;
+            let key = packGridKey(x, y);
             let cached = safeGridCache.get(key);
             if (cached !== undefined) return cached;
             let result = isSafe(x, y);
@@ -412,7 +422,7 @@
         function buildTreeGrid() {
             treeGrid = new Map();
             for (let t of trees) {
-                let key = Math.floor(t.x / treeGridSize) + '_' + Math.floor(t.y / treeGridSize);
+                let key = packGridKey(Math.floor(t.x / treeGridSize), Math.floor(t.y / treeGridSize));
                 let bucket = treeGrid.get(key);
                 if (!bucket) { bucket = []; treeGrid.set(key, bucket); }
                 bucket.push(t);
@@ -427,7 +437,7 @@
             let cx = Math.floor(x / treeGridSize), cy = Math.floor(y / treeGridSize);
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dy = -1; dy <= 1; dy++) {
-                    let bucket = treeGrid.get((cx + dx) + '_' + (cy + dy));
+                    let bucket = treeGrid.get(packGridKey(cx + dx, cy + dy));
                     if (bucket) for (let i = 0; i < bucket.length; i++) treeQueryResult.push(bucket[i]);
                 }
             }
@@ -444,7 +454,7 @@
             let cy0 = Math.floor(y0 / cellSize), cy1 = Math.floor(y1 / cellSize);
             for (let cx = cx0; cx <= cx1; cx++) {
                 for (let cy = cy0; cy <= cy1; cy++) {
-                    let bucket = grid.get(cx + '_' + cy);
+                    let bucket = grid.get(packGridKey(cx, cy));
                     if (bucket) for (let i = 0; i < bucket.length; i++) out.push(bucket[i]);
                 }
             }
@@ -462,7 +472,7 @@
         function buildDecorGrid() {
             decorGrid = new Map();
             for (let d of decorations) {
-                let key = Math.floor(d.x / decorGridSize) + '_' + Math.floor(d.y / decorGridSize);
+                let key = packGridKey(Math.floor(d.x / decorGridSize), Math.floor(d.y / decorGridSize));
                 let bucket = decorGrid.get(key);
                 if (!bucket) { bucket = []; decorGrid.set(key, bucket); }
                 bucket.push(d);
@@ -481,7 +491,7 @@
         function buildFenceGrid() {
             fenceGrid = new Map();
             for (let f of fences) {
-                let key = Math.floor(f.midX / fenceGridSize) + '_' + Math.floor(f.midY / fenceGridSize);
+                let key = packGridKey(Math.floor(f.midX / fenceGridSize), Math.floor(f.midY / fenceGridSize));
                 let bucket = fenceGrid.get(key);
                 if (!bucket) { bucket = []; fenceGrid.set(key, bucket); }
                 bucket.push(f);
@@ -493,7 +503,7 @@
             let cx = Math.floor(x / fenceGridSize), cy = Math.floor(y / fenceGridSize);
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dy = -1; dy <= 1; dy++) {
-                    let bucket = fenceGrid.get((cx + dx) + '_' + (cy + dy));
+                    let bucket = fenceGrid.get(packGridKey(cx + dx, cy + dy));
                     if (bucket) for (let i = 0; i < bucket.length; i++) fenceQueryResult.push(bucket[i]);
                 }
             }
@@ -516,13 +526,13 @@
             landTileGrid = new Map();
             holeTileGrid = new Map();
             for (let t of landHexList) {
-                let key = Math.floor(t.x / landTileGridSize) + '_' + Math.floor(t.y / landTileGridSize);
+                let key = packGridKey(Math.floor(t.x / landTileGridSize), Math.floor(t.y / landTileGridSize));
                 let bucket = landTileGrid.get(key);
                 if (!bucket) { bucket = []; landTileGrid.set(key, bucket); }
                 bucket.push(t);
             }
             for (let t of holeHexList) {
-                let key = Math.floor(t.x / landTileGridSize) + '_' + Math.floor(t.y / landTileGridSize);
+                let key = packGridKey(Math.floor(t.x / landTileGridSize), Math.floor(t.y / landTileGridSize));
                 let bucket = holeTileGrid.get(key);
                 if (!bucket) { bucket = []; holeTileGrid.set(key, bucket); }
                 bucket.push(t);
