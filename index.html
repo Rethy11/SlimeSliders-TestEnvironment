@@ -433,6 +433,45 @@
             }
             return treeQueryResult;
         }
+        // PERF: generic "give me everything in this rectangular region" query over a
+        // grid-bucketed array, used at draw time so trees/decorations only need to check
+        // isOnScreen against a small handful of nearby candidates instead of the entire
+        // (100-4000+ entry) array every single frame. gridSize must match the grid the
+        // buckets were built with (treeGridSize / decorGridSize below).
+        function queryGridRange(grid, cellSize, x0, y0, x1, y1, out) {
+            out.length = 0;
+            let cx0 = Math.floor(x0 / cellSize), cx1 = Math.floor(x1 / cellSize);
+            let cy0 = Math.floor(y0 / cellSize), cy1 = Math.floor(y1 / cellSize);
+            for (let cx = cx0; cx <= cx1; cx++) {
+                for (let cy = cy0; cy <= cy1; cy++) {
+                    let bucket = grid.get(cx + '_' + cy);
+                    if (bucket) for (let i = 0; i < bucket.length; i++) out.push(bucket[i]);
+                }
+            }
+            return out;
+        }
+        let treeViewResult = [];
+        function getTreesInView(x0, y0, x1, y1) {
+            return queryGridRange(treeGrid, treeGridSize, x0, y0, x1, y1, treeViewResult);
+        }
+        // Decorations (grass/flower/leaf specks scattered across every land tile, 2-4 per tile
+        // - easily thousands on a large level) get their own coarser grid. They're static and
+        // rebuilt once per generateLevel(), same lifecycle as trees.
+        const decorGridSize = 300;
+        let decorGrid = new Map();
+        function buildDecorGrid() {
+            decorGrid = new Map();
+            for (let d of decorations) {
+                let key = Math.floor(d.x / decorGridSize) + '_' + Math.floor(d.y / decorGridSize);
+                let bucket = decorGrid.get(key);
+                if (!bucket) { bucket = []; decorGrid.set(key, bucket); }
+                bucket.push(d);
+            }
+        }
+        let decorViewResult = [];
+        function getDecorationsInView(x0, y0, x1, y1) {
+            return queryGridRange(decorGrid, decorGridSize, x0, y0, x1, y1, decorViewResult);
+        }
 
         // Spatial hash grid for fences (same pattern as the tree grid above). Fences are solid -
         // entities get pushed back out along the fence's normal, same shape of check as tree
@@ -1492,6 +1531,7 @@
                     decorations.push({ x: tile.x + Math.cos(a) * r, y: tile.y + Math.sin(a) * r, type: Math.floor(Math.random() * 3), color: currentTheme.decorColors[Math.floor(Math.random() * currentTheme.decorColors.length)] });
                 }
             }
+            buildDecorGrid();
 
             let powerupCount = Math.random() < 0.5 ? 1 : 2;
             for (let i = 0; i < powerupCount; i++) {
@@ -3131,18 +3171,36 @@
             }
             ctx.stroke();
             const cullBuffer = 100; let breezeX = player.vx * 0.08; 
-            decorations.forEach(d => {
+            // PERF: was decorations.forEach() over the full array (can be thousands of specks
+            // on a large level) checking isOnScreen on every single one every frame. Now we
+            // first narrow to the handful of grid buckets overlapping the current viewport,
+            // then run the exact same isOnScreen check only on those candidates - identical
+            // visual result, far fewer checks.
+            let decorCandidates = getDecorationsInView(
+                camera.x - tiltX - cullBuffer, camera.y - tiltY - cullBuffer,
+                camera.x - tiltX + canvas.width + cullBuffer, camera.y - tiltY + canvas.height + cullBuffer
+            );
+            for (let di = 0; di < decorCandidates.length; di++) {
+                let d = decorCandidates[di];
                 if(isOnScreen(d.x + tiltX, d.y + tiltY, cullBuffer)) {
                     ctx.fillStyle = d.color; ctx.strokeStyle = d.color; ctx.lineWidth = 2;
                     if (d.type === 0) { ctx.beginPath(); ctx.arc(d.x, d.y, 3, 0, Math.PI*2); ctx.fill(); } 
                     else if (d.type === 1) { ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-4+breezeX*5, d.y-8); ctx.lineTo(d.x+4+breezeX*5, d.y-8); ctx.fill(); } 
                     else { ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.quadraticCurveTo(d.x + breezeX*5, d.y - 6, d.x + breezeX*10, d.y - 12); ctx.stroke(); }
                 }
-             });
+            }
             ctx.restore(); 
 
             rqCount = 0;
-            for (let i = 0; i < trees.length; i++) { let t = trees[i]; if (isOnScreen(t.x + tiltX, t.y + tiltY, cullBuffer)) pushRQ(t.type, t, t.y + t.radius); }
+            // PERF: was a full trees.length scan checking isOnScreen on every tree every frame
+            // (100-300+ trees). Reuses the same treeGrid built for physics collision to narrow
+            // to nearby buckets first - identical visual result (isOnScreen still does the
+            // final exact check), far fewer checks on a tree-dense level.
+            let treeCandidates = getTreesInView(
+                camera.x - tiltX - cullBuffer, camera.y - tiltY - cullBuffer,
+                camera.x - tiltX + canvas.width + cullBuffer, camera.y - tiltY + canvas.height + cullBuffer
+            );
+            for (let i = 0; i < treeCandidates.length; i++) { let t = treeCandidates[i]; if (isOnScreen(t.x + tiltX, t.y + tiltY, cullBuffer)) pushRQ(t.type, t, t.y + t.radius); }
             for (let i = 0; i < fences.length; i++) { let f = fences[i]; if (isOnScreen(f.midX + tiltX, f.midY + tiltY, cullBuffer)) pushRQ('fence', f, f.midY + 10); }
             for (let i = 0; i < hives.length; i++) { let h = hives[i]; if (isOnScreen(h.x + tiltX, h.y + tiltY, cullBuffer)) pushRQ('hive', h, h.y + (h.radius || 0)); }
             for (let i = 0; i < enemies.length; i++) { let e = enemies[i]; if (isOnScreen(e.x + tiltX, e.y + tiltY, cullBuffer)) pushRQ('enemy', e, e.y + (e.radius || 0)); }
