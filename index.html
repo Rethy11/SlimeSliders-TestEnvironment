@@ -499,6 +499,44 @@
             }
             return fenceQueryResult;
         }
+        // Spatial hash grid for land/hole hex tiles (same pattern as the tree/decoration grids
+        // above). PERF: computeVisibleLandTiles() and drawHazardHoles() used to linear-scan the
+        // *entire* landHexList/holeHexList every single frame just to run isOnScreen() on each
+        // tile - by far the single highest call-count function in the perf report (isOnScreen:
+        // ~8M calls/session). Map size grows with level (up to 9 overlapping blobs at radius
+        // 250-500 by level 20), so that scan cost scales with total level area, not with what's
+        // actually visible. Bucketing once per generateLevel() and querying only the handful of
+        // cells overlapping the camera brings both down to a small, roughly constant number of
+        // isOnScreen checks regardless of how big the level is - mirrors getTreesInView /
+        // getDecorationsInView exactly.
+        const landTileGridSize = HEX_SIZE * 4;
+        let landTileGrid = new Map();
+        let holeTileGrid = new Map();
+        function buildLandTileGrid() {
+            landTileGrid = new Map();
+            holeTileGrid = new Map();
+            for (let t of landHexList) {
+                let key = Math.floor(t.x / landTileGridSize) + '_' + Math.floor(t.y / landTileGridSize);
+                let bucket = landTileGrid.get(key);
+                if (!bucket) { bucket = []; landTileGrid.set(key, bucket); }
+                bucket.push(t);
+            }
+            for (let t of holeHexList) {
+                let key = Math.floor(t.x / landTileGridSize) + '_' + Math.floor(t.y / landTileGridSize);
+                let bucket = holeTileGrid.get(key);
+                if (!bucket) { bucket = []; holeTileGrid.set(key, bucket); }
+                bucket.push(t);
+            }
+        }
+        let landTileViewResult = [];
+        function getLandTilesInView(x0, y0, x1, y1) {
+            return queryGridRange(landTileGrid, landTileGridSize, x0, y0, x1, y1, landTileViewResult);
+        }
+        let holeTileViewResult = [];
+        function getHoleTilesInView(x0, y0, x1, y1) {
+            return queryGridRange(holeTileGrid, landTileGridSize, x0, y0, x1, y1, holeTileViewResult);
+        }
+
         // Pushes (x, y) back out of any nearby fence segment it's overlapping (within `radius` of
         // the segment plus the fence's own thickness), and returns the corrected point. Used by
         // the player and enemies each tick so fences act as solid walls rather than decoration.
@@ -1007,8 +1045,17 @@
         let visibleLandTiles = [];
         function computeVisibleLandTiles() {
             visibleLandTiles.length = 0;
-            for (let tile of landHexList) {
-                if (isOnScreen(tile.x, tile.y, HEX_SIZE * 2)) visibleLandTiles.push(tile);
+            let buf = HEX_SIZE * 2;
+            // PERF: narrow to the grid cells overlapping the viewport first (see
+            // buildLandTileGrid) instead of scanning every land tile in the level, then run the
+            // exact same isOnScreen check only on those candidates - identical visual result.
+            let candidates = getLandTilesInView(
+                camera.x - buf, camera.y - buf,
+                camera.x + canvas.width + buf, camera.y + canvas.height + buf
+            );
+            for (let i = 0; i < candidates.length; i++) {
+                let tile = candidates[i];
+                if (isOnScreen(tile.x, tile.y, buf)) visibleLandTiles.push(tile);
             }
             return visibleLandTiles;
         }
@@ -1450,6 +1497,7 @@
             }
             landHexList = []; holeHexList = [];
             for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
+            buildLandTileGrid();
 
             goal.x = goalTile.x; goal.y = goalTile.y; goal.active = true;
             goalTile.element = { type: 'goal' };
@@ -2884,8 +2932,16 @@
         // never the outer edge of the map, which is sky instead (see drawSkyBackground).
         function drawHazardHoles() {
             let hz = currentTheme.hazard;
-            for (let tile of holeHexList) {
-                if (!isOnScreen(tile.x, tile.y, HEX_SIZE * 2)) continue;
+            let buf = HEX_SIZE * 2;
+            // PERF: same grid-narrowing as computeVisibleLandTiles - only check candidates from
+            // cells overlapping the viewport instead of every hole in the level.
+            let candidates = getHoleTilesInView(
+                camera.x - buf, camera.y - buf,
+                camera.x + canvas.width + buf, camera.y + canvas.height + buf
+            );
+            for (let ti = 0; ti < candidates.length; ti++) {
+                let tile = candidates[ti];
+                if (!isOnScreen(tile.x, tile.y, buf)) continue;
                 let c = cachedHexCorners(tile);
                 ctx.save();
                 ctx.beginPath(); ctx.moveTo(c[0].x, c[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(c[i].x, c[i].y); ctx.closePath();
