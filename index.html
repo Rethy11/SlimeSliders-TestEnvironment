@@ -402,10 +402,20 @@
         // those world coordinates repeat across many consecutive frames as the camera pans and
         // isSafe() itself has to scan every land blob. Cleared whenever a new level is generated.
         let safeGridCache = new Map();
+        // FIX: this cache was only ever cleared on generateLevel(). Within a single level the
+        // camera keeps panning across new territory for the whole session, so it accumulated one
+        // entry per unique on-screen grid intersection ever visited and never shrank - the
+        // "growing cache without release" heap-leak signature from the perf report. It's a pure
+        // memoization of a per-frame, per-viewport lookup (only the handful of cells on screen
+        // right now are ever read back), so it doesn't need to remember the whole level's
+        // history - just enough to avoid recompute within the same/next couple of frames. Cap it
+        // and hard-reset once it gets big instead of letting it grow unbounded.
+        const SAFE_GRID_CACHE_MAX = 4000;
         function isSafeGridCached(x, y) {
             let key = packGridKey(x, y);
             let cached = safeGridCache.get(key);
             if (cached !== undefined) return cached;
+            if (safeGridCache.size >= SAFE_GRID_CACHE_MAX) safeGridCache.clear();
             let result = isSafe(x, y);
             safeGridCache.set(key, result);
             return result;
@@ -519,6 +529,10 @@
         // cells overlapping the camera brings both down to a small, roughly constant number of
         // isOnScreen checks regardless of how big the level is - mirrors getTreesInView /
         // getDecorationsInView exactly.
+        // Tile size mirrors the goal's footprint, per design: "smaller (the size of the goal)"
+        // Declared here (rather than down with the rest of the hex grid math) because the
+        // land-tile spatial-hash grid below needs it, and this runs first.
+        const HEX_SIZE = 48;
         const landTileGridSize = HEX_SIZE * 4;
         let landTileGrid = new Map();
         let holeTileGrid = new Map();
@@ -602,6 +616,26 @@
         // why each one is safe to cache (identical output every time vs. bucketed by size).
         let icicleGradientCache = null;
         const flameGradientCache = new Map();
+        // PERF: drawCharacterModel() runs once per visible character every single frame (player +
+        // every on-screen enemy/companion), and was calling ctx.createLinearGradient /
+        // createRadialGradient from scratch inside it for the 'gold'/'galaxy' skins and for every
+        // hat design - none of which vary frame to frame (they only depend on the entity's
+        // radius, which only changes a handful of times per game, not its position - position is
+        // handled by ctx.translate before these run). That's a fresh CanvasGradient allocation
+        // (and GC'd garbage) every frame per equipped skin/hat, compounding with entity count -
+        // the single largest uncached per-frame allocation source in the render path. Cached here
+        // the same way flame/icicle particle gradients already are, keyed by radius (rounded, so
+        // near-identical radii share a bucket) since that's the only input that affects them.
+        const charGradientCache = new Map();
+        function getCharGradient(key, radius, build) {
+            let bucket = Math.round(radius);
+            let cacheKey = key + '_' + bucket;
+            let cached = charGradientCache.get(cacheKey);
+            if (cached) return cached;
+            let grad = build(bucket);
+            charGradientCache.set(cacheKey, grad);
+            return grad;
+        }
         // PERF: see drawSkyBackground (SECTION 8) - both cached the same way, keyed off
         // canvas.height so a resize correctly invalidates and rebuilds them.
         let skyGradientCache = null;
@@ -1016,7 +1050,8 @@
 
         // ---- Hex grid math (pointy-top, axial coordinates) ----
         // Tile size mirrors the goal's footprint, per design: "smaller (the size of the goal)"
-        const HEX_SIZE = 48;
+        // (HEX_SIZE itself is declared near the top of the script, since the land-tile
+        // spatial-hash grid below also depends on it and runs before this point.)
         const HEX_DIRS = [{q:1,r:0},{q:1,r:-1},{q:0,r:-1},{q:-1,r:0},{q:-1,r:1},{q:0,r:1}];
         function hexKey(q, r) { return q + ',' + r; }
         function axialToPixel(q, r) { return { x: HEX_SIZE * Math.sqrt(3) * (q + r/2), y: HEX_SIZE * 1.5 * r }; }
@@ -3024,15 +3059,21 @@
             if (basicMatch) fillColor = basicMatch.color;
             else if (colorId === 'rainbow') { fillColor = `hsl(${(t / 5) % 360}, 100%, 50%)`; drawSpecial = 'rainbow'; }
             else if (colorId === 'gold') {
-                let grad = c.createLinearGradient(-radius, -radius, radius, radius);
-                grad.addColorStop(0, '#bf953f'); grad.addColorStop(0.5, '#fcf6ba'); grad.addColorStop(1, '#b38728');
-                fillColor = grad; drawSpecial = 'gold';
+                fillColor = getCharGradient('gold', radius, (r) => {
+                    let grad = c.createLinearGradient(-r, -r, r, r);
+                    grad.addColorStop(0, '#bf953f'); grad.addColorStop(0.5, '#fcf6ba'); grad.addColorStop(1, '#b38728');
+                    return grad;
+                });
+                drawSpecial = 'gold';
             }
             else if (colorId === 'lava') { fillColor = `rgb(${180 + Math.sin(t/150)*75}, ${40 + Math.sin(t/200)*20}, 0)`; drawSpecial = 'lava'; }
             else if (colorId === 'galaxy') {
-                let grad = c.createRadialGradient(0, 0, 0, 0, 0, radius*1.5);
-                grad.addColorStop(0, '#2b1055'); grad.addColorStop(1, '#7597de');
-                fillColor = grad; drawSpecial = 'galaxy';
+                fillColor = getCharGradient('galaxy', radius, (r) => {
+                    let grad = c.createRadialGradient(0, 0, 0, 0, 0, r*1.5);
+                    grad.addColorStop(0, '#2b1055'); grad.addColorStop(1, '#7597de');
+                    return grad;
+                });
+                drawSpecial = 'galaxy';
             }
             else if (colorId === 'ice') { fillColor = `rgba(165, 242, 243, ${0.8 + Math.sin(t/300)*0.2})`; drawSpecial = 'ice'; }
             else if (colorId === 'toxic') { fillColor = `rgb(${50 + Math.sin(t/100)*50}, 255, 50)`; drawSpecial = 'toxic'; }
@@ -3122,26 +3163,34 @@
                 
                 if (hatId === 'cowboy') {
                     c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(0, 6, r*1.32, r*0.36, 0, 0, Math.PI*2); c.fill();
-                    let brimGrad = c.createLinearGradient(0, -r*0.1, 0, r*0.15);
-                    brimGrad.addColorStop(0, '#a0672c'); brimGrad.addColorStop(1, '#6e4419');
+                    let brimGrad = getCharGradient('hat_cowboy_brim', r, (rr) => {
+                        let g = c.createLinearGradient(0, -rr*0.1, 0, rr*0.15);
+                        g.addColorStop(0, '#a0672c'); g.addColorStop(1, '#6e4419'); return g;
+                    });
                     c.fillStyle = brimGrad; c.beginPath(); c.ellipse(0, 5, r*1.3, r*0.35, 0, 0, Math.PI*2); c.fill();
                     c.strokeStyle = '#5a3714'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, 5, r*1.3, r*0.35, 0, 0, Math.PI*2); c.stroke();
-                    let domeGrad = c.createLinearGradient(-r*0.6, -r*0.7, r*0.6, 0);
-                    domeGrad.addColorStop(0, '#c17f3e'); domeGrad.addColorStop(1, '#8b5a2b');
+                    let domeGrad = getCharGradient('hat_cowboy_dome', r, (rr) => {
+                        let g = c.createLinearGradient(-rr*0.6, -rr*0.7, rr*0.6, 0);
+                        g.addColorStop(0, '#c17f3e'); g.addColorStop(1, '#8b5a2b'); return g;
+                    });
                     c.fillStyle = domeGrad; c.beginPath(); c.roundRect(-r*0.6, -r*0.7, r*1.2, r*0.8, 5); c.fill();
                     c.fillStyle = '#5a3714'; c.fillRect(-r*0.6, -r*0.22, r*1.2, r*0.14);
                 } else if (hatId === 'tophat') {
                     c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(0, 6, r*1.12, r*0.27, 0, 0, Math.PI*2); c.fill();
                     c.fillStyle = '#111'; c.beginPath(); c.ellipse(0, 5, r*1.1, r*0.25, 0, 0, Math.PI*2); c.fill();
-                    let topGrad = c.createLinearGradient(-r*0.65, -r, r*0.65, 0);
-                    topGrad.addColorStop(0, '#2b2b2b'); topGrad.addColorStop(0.5, '#111'); topGrad.addColorStop(1, '#000');
+                    let topGrad = getCharGradient('hat_tophat', r, (rr) => {
+                        let g = c.createLinearGradient(-rr*0.65, -rr, rr*0.65, 0);
+                        g.addColorStop(0, '#2b2b2b'); g.addColorStop(0.5, '#111'); g.addColorStop(1, '#000'); return g;
+                    });
                     c.fillStyle = topGrad; c.fillRect(-r*0.65, -r, r*1.3, r);
                     c.fillStyle = '#e74c3c'; c.fillRect(-r*0.65, -r*0.3, r*1.3, r*0.3);
                     c.strokeStyle = '#000'; c.lineWidth = 1; c.strokeRect(-r*0.65, -r*0.3, r*1.3, r*0.3);
                     c.fillStyle = 'rgba(255,255,255,0.15)'; c.fillRect(-r*0.5, -r*0.95, r*0.18, r*0.65);
                 } else if (hatId === 'crown') {
-                    let crownGrad = c.createLinearGradient(-r*0.9, -r, r*0.9, 5);
-                    crownGrad.addColorStop(0, '#fff2a8'); crownGrad.addColorStop(0.5, '#f1c40f'); crownGrad.addColorStop(1, '#c9960b');
+                    let crownGrad = getCharGradient('hat_crown', r, (rr) => {
+                        let g = c.createLinearGradient(-rr*0.9, -rr, rr*0.9, 5);
+                        g.addColorStop(0, '#fff2a8'); g.addColorStop(0.5, '#f1c40f'); g.addColorStop(1, '#c9960b'); return g;
+                    });
                     c.fillStyle = crownGrad;
                     c.beginPath(); c.moveTo(-r*0.7, 5); c.lineTo(r*0.7, 5); c.lineTo(r*0.9, -r*0.8); c.lineTo(r*0.3, -r*0.3); c.lineTo(0, -r); c.lineTo(-r*0.3, -r*0.3); c.lineTo(-r*0.9, -r*0.8); c.closePath(); c.fill();
                     c.strokeStyle = '#a5730a'; c.lineWidth = 1.5; c.stroke();
@@ -3155,8 +3204,10 @@
                     c.fillStyle = '#3498db'; c.beginPath(); c.arc(-r*0.35, -r*0.15, 2, 0, Math.PI*2); c.arc(r*0.35, -r*0.15, 2, 0, Math.PI*2); c.fill();
                     c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(-r*0.15, -r*0.6, 1.5, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'beanie') {
-                    let beanieGrad = c.createLinearGradient(0, -r*0.8, 0, r*0.2);
-                    beanieGrad.addColorStop(0, '#5dade2'); beanieGrad.addColorStop(1, '#2e86c1');
+                    let beanieGrad = getCharGradient('hat_beanie', r, (rr) => {
+                        let g = c.createLinearGradient(0, -rr*0.8, 0, rr*0.2);
+                        g.addColorStop(0, '#5dade2'); g.addColorStop(1, '#2e86c1'); return g;
+                    });
                     c.fillStyle = beanieGrad; c.beginPath(); c.arc(0, 5, r*0.8, Math.PI, 0); c.fill();
                     c.strokeStyle = 'rgba(255,255,255,0.3)'; c.lineWidth = 1.5;
                     for (let i=-2; i<=2; i++) { c.beginPath(); c.moveTo(i*r*0.15, 4); c.lineTo(i*r*0.18, -r*0.7); c.stroke(); }
@@ -3165,8 +3216,10 @@
                     c.fillStyle = 'rgba(255,255,255,0.4)'; c.beginPath(); c.arc(-r*0.08, -r*0.85+5, r*0.08, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'bow') {
                     c.fillStyle = 'rgba(0,0,0,0.2)'; c.beginPath(); c.ellipse(0, 0, r*0.75, r*0.5, 0, 0, Math.PI*2); c.fill();
-                    let bowGrad = c.createLinearGradient(-r*0.7, 0, r*0.7, 0);
-                    bowGrad.addColorStop(0, '#ff6b81'); bowGrad.addColorStop(1, '#e74c3c');
+                    let bowGrad = getCharGradient('hat_bow', r, (rr) => {
+                        let g = c.createLinearGradient(-rr*0.7, 0, rr*0.7, 0);
+                        g.addColorStop(0, '#ff6b81'); g.addColorStop(1, '#e74c3c'); return g;
+                    });
                     c.fillStyle = bowGrad;
                     c.beginPath(); c.moveTo(0,-r*0.2); c.lineTo(-r*0.7, -r*0.7); c.lineTo(-r*0.7, r*0.3); c.closePath(); c.fill();
                     c.beginPath(); c.moveTo(0,-r*0.2); c.lineTo(r*0.7, -r*0.7); c.lineTo(r*0.7, r*0.3); c.closePath(); c.fill();
@@ -3178,8 +3231,10 @@
                     c.strokeStyle = '#f1c40f'; c.lineWidth = 4; c.beginPath(); c.ellipse(0, -r*0.6, r*0.9, r*0.25, 0, 0, Math.PI*2); c.stroke();
                     c.strokeStyle = '#fff9c4'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, -r*0.65, r*0.85, r*0.2, 0, 0, Math.PI*2); c.stroke();
                 } else if (hatId === 'party') {
-                    let partyGrad = c.createLinearGradient(0, 5, 0, -r*1.2);
-                    partyGrad.addColorStop(0, '#a569bd'); partyGrad.addColorStop(1, '#7d3c98');
+                    let partyGrad = getCharGradient('hat_party', r, (rr) => {
+                        let g = c.createLinearGradient(0, 5, 0, -rr*1.2);
+                        g.addColorStop(0, '#a569bd'); g.addColorStop(1, '#7d3c98'); return g;
+                    });
                     c.fillStyle = partyGrad; c.beginPath(); c.moveTo(-r*0.6, 5); c.lineTo(r*0.6, 5); c.lineTo(0, -r*1.2); c.closePath(); c.fill();
                     c.strokeStyle = '#5b2c6f'; c.lineWidth = 1; c.stroke();
                     c.fillStyle = '#f1c40f'; c.beginPath(); c.moveTo(-r*0.3, -r*0.3); c.lineTo(0.2, -r*0.1); c.lineTo(-r*0.1, -r*0.5); c.fill();
@@ -3189,8 +3244,10 @@
                     c.fillStyle = '#e74c3c'; c.beginPath(); c.arc(-r*0.25, -r*0.05, 3, 0, Math.PI*2); c.arc(r*0.25, -r*0.85, 3, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'pirate') {
                     c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(0, 6, r*1.22, r*0.3, 0, 0, Math.PI*2); c.fill();
-                    let pirateGrad = c.createLinearGradient(0, -r*0.8, 0, 5);
-                    pirateGrad.addColorStop(0, '#333'); pirateGrad.addColorStop(1, '#111');
+                    let pirateGrad = getCharGradient('hat_pirate', r, (rr) => {
+                        let g = c.createLinearGradient(0, -rr*0.8, 0, 5);
+                        g.addColorStop(0, '#333'); g.addColorStop(1, '#111'); return g;
+                    });
                     c.fillStyle = pirateGrad;
                     c.beginPath(); c.moveTo(-r*1.2, 5); c.lineTo(r*1.2, 5); c.lineTo(r*0.7, -r*0.8); c.lineTo(-r*0.7, -r*0.8); c.closePath(); c.fill();
                     c.strokeStyle = '#f1c40f'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-r*1.15, 3); c.lineTo(r*1.15, 3); c.stroke();
@@ -3199,8 +3256,10 @@
                     c.fillRect(-r*0.04, -r*0.06, r*0.08, r*0.1);
                     c.fillStyle = '#f1c40f'; c.beginPath(); c.arc(-r*0.9, 0, 3, 0, Math.PI*2); c.arc(r*0.9, 0, 3, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'cap') {
-                    let capGrad = c.createLinearGradient(0, -r*0.6, 0, 5);
-                    capGrad.addColorStop(0, '#ff6b6b'); capGrad.addColorStop(1, '#c0392b');
+                    let capGrad = getCharGradient('hat_cap', r, (rr) => {
+                        let g = c.createLinearGradient(0, -rr*0.6, 0, 5);
+                        g.addColorStop(0, '#ff6b6b'); g.addColorStop(1, '#c0392b'); return g;
+                    });
                     c.fillStyle = capGrad; c.beginPath(); c.arc(0, 5, r*0.7, Math.PI, 0); c.fill();
                     c.strokeStyle = 'rgba(255,255,255,0.25)'; c.lineWidth = 1;
                     c.beginPath(); c.moveTo(-r*0.5, 4); c.quadraticCurveTo(0, -r*0.65, r*0.5, 4); c.stroke();
@@ -3208,12 +3267,16 @@
                     c.fillStyle = 'rgba(0,0,0,0.15)'; c.fillRect(0, 3, r*1.2, 2);
                     c.fillStyle = '#fff'; c.beginPath(); c.arc(0, -r*0.55, 2, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'horns') {
-                    let hornGrad = c.createLinearGradient(-r*0.9, -r*0.8, -r*0.1, 5);
-                    hornGrad.addColorStop(0, '#e74c3c'); hornGrad.addColorStop(1, '#8b1a1a');
+                    let hornGrad = getCharGradient('hat_horns_l', r, (rr) => {
+                        let g = c.createLinearGradient(-rr*0.9, -rr*0.8, -rr*0.1, 5);
+                        g.addColorStop(0, '#e74c3c'); g.addColorStop(1, '#8b1a1a'); return g;
+                    });
                     c.fillStyle = hornGrad;
                     c.beginPath(); c.moveTo(-r*0.3, 5); c.quadraticCurveTo(-r*0.7, -r*0.6, -r*0.9, -r*0.8); c.quadraticCurveTo(-r*0.5, -r*0.3, -r*0.1, 5); c.fill();
-                    let hornGrad2 = c.createLinearGradient(r*0.1, -r*0.8, r*0.9, 5);
-                    hornGrad2.addColorStop(0, '#8b1a1a'); hornGrad2.addColorStop(1, '#e74c3c');
+                    let hornGrad2 = getCharGradient('hat_horns_r', r, (rr) => {
+                        let g = c.createLinearGradient(rr*0.1, -rr*0.8, rr*0.9, 5);
+                        g.addColorStop(0, '#8b1a1a'); g.addColorStop(1, '#e74c3c'); return g;
+                    });
                     c.fillStyle = hornGrad2;
                     c.beginPath(); c.moveTo(r*0.3, 5); c.quadraticCurveTo(r*0.7, -r*0.6, r*0.9, -r*0.8); c.quadraticCurveTo(r*0.5, -r*0.3, r*0.1, 5); c.fill();
                     c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 1;
