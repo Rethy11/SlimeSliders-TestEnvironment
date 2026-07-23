@@ -44,6 +44,30 @@
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
         #hazard-warning { position: absolute; top: 15%; left: 50%; transform: translate(-50%, -50%); display: none; background: rgba(0, 0, 0, 0.7); color: #ff477e; padding: 10px 20px; border-radius: 30px; border: 2px solid #ff477e; font-size: 1.5rem; font-weight: bold; text-shadow: 0 0 5px #000; z-index: 10; pointer-events: none; animation: pulse 0.5s infinite; }
+
+        /* Secret "Corrupted Data" glitch slime — unlocked via 20 consecutive Remove Hat clicks.
+           #gameCanvas is the only inverted element (UI/HUD divs sit outside the canvas), so
+           equipping the skin flips the world's colors without breaking HUD readability. */
+        #gameCanvas.color-inverted { filter: invert(1) hue-rotate(180deg); }
+
+        #secret-unlock-toast {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.7);
+            z-index: 70; pointer-events: none; opacity: 0;
+            background: #000; color: #39ff14; padding: 18px 26px; border-radius: 4px;
+            border: 2px solid #39ff14; text-align: center; font-size: 0.75rem; line-height: 1.7;
+            box-shadow: 0 0 25px rgba(57,255,20,0.6), 0 0 8px rgba(255,0,60,0.6) inset;
+        }
+        #secret-unlock-toast .glitch-title { color: #ff003c; font-size: 0.95rem; display: block; margin-bottom: 8px; animation: glitchFlicker 0.15s steps(2) infinite; }
+        @keyframes glitchFlicker { 0% { color: #ff003c; } 50% { color: #39ff14; } 100% { color: #ff003c; } }
+        #secret-unlock-toast.show { animation: secretUnlockPop 3.2s ease-out forwards; }
+        @keyframes secretUnlockPop {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); filter: none; }
+            6% { opacity: 1; transform: translate(-51%, -49%) scale(1.03); }
+            8% { transform: translate(-49%, -51%) scale(1); }
+            10% { transform: translate(-50%, -50%) scale(1); }
+            85% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+        }
         #hazard-vignette {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none; z-index: 8; opacity: 0;
@@ -248,6 +272,7 @@
 
 
     <div id="item-toast"><img class="icon-img" id="item-toast-icon" style="width:1.4em;height:1.4em;" alt=""> <span id="item-toast-text"></span></div>
+    <div id="secret-unlock-toast"><span class="glitch-title">// GLITCH DETECTED //</span>CORRUPTED DATA slime unlocked!<br>Equip it in the Skins shop.</div>
 
     <button id="settings-corner-btn" class="corner-icon"><img class="icon-img" id="settings-icon-img" style="width:1.6rem;height:1.6rem;" alt=""></button>
     <button id="almanac-corner-btn" class="corner-icon"><img class="icon-img" id="almanac-icon-img" style="width:1.6rem;height:1.6rem;" alt=""></button>
@@ -402,20 +427,10 @@
         // those world coordinates repeat across many consecutive frames as the camera pans and
         // isSafe() itself has to scan every land blob. Cleared whenever a new level is generated.
         let safeGridCache = new Map();
-        // FIX: this cache was only ever cleared on generateLevel(). Within a single level the
-        // camera keeps panning across new territory for the whole session, so it accumulated one
-        // entry per unique on-screen grid intersection ever visited and never shrank - the
-        // "growing cache without release" heap-leak signature from the perf report. It's a pure
-        // memoization of a per-frame, per-viewport lookup (only the handful of cells on screen
-        // right now are ever read back), so it doesn't need to remember the whole level's
-        // history - just enough to avoid recompute within the same/next couple of frames. Cap it
-        // and hard-reset once it gets big instead of letting it grow unbounded.
-        const SAFE_GRID_CACHE_MAX = 4000;
         function isSafeGridCached(x, y) {
             let key = packGridKey(x, y);
             let cached = safeGridCache.get(key);
             if (cached !== undefined) return cached;
-            if (safeGridCache.size >= SAFE_GRID_CACHE_MAX) safeGridCache.clear();
             let result = isSafe(x, y);
             safeGridCache.set(key, result);
             return result;
@@ -616,30 +631,15 @@
         // why each one is safe to cache (identical output every time vs. bucketed by size).
         let icicleGradientCache = null;
         const flameGradientCache = new Map();
-        // PERF: drawCharacterModel() runs once per visible character every single frame (player +
-        // every on-screen enemy/companion), and was calling ctx.createLinearGradient /
-        // createRadialGradient from scratch inside it for the 'gold'/'galaxy' skins and for every
-        // hat design - none of which vary frame to frame (they only depend on the entity's
-        // radius, which only changes a handful of times per game, not its position - position is
-        // handled by ctx.translate before these run). That's a fresh CanvasGradient allocation
-        // (and GC'd garbage) every frame per equipped skin/hat, compounding with entity count -
-        // the single largest uncached per-frame allocation source in the render path. Cached here
-        // the same way flame/icicle particle gradients already are, keyed by radius (rounded, so
-        // near-identical radii share a bucket) since that's the only input that affects them.
-        const charGradientCache = new Map();
-        function getCharGradient(key, radius, build) {
-            let bucket = Math.round(radius);
-            let cacheKey = key + '_' + bucket;
-            let cached = charGradientCache.get(cacheKey);
-            if (cached) return cached;
-            let grad = build(bucket);
-            charGradientCache.set(cacheKey, grad);
-            return grad;
-        }
         // PERF: see drawSkyBackground (SECTION 8) - both cached the same way, keyed off
         // canvas.height so a resize correctly invalidates and rebuilds them.
         let skyGradientCache = null;
         let skyGradientCacheH = -1;
+        // The Void skin darkens the outer sky (and, via getActiveHazardTheme, hazard water/lava
+        // pockets) to black/purple instead of the normal blue - cached separately from the
+        // regular sky gradient so switching skins doesn't need to rebuild either one.
+        let voidSkyGradientCache = null;
+        let voidSkyGradientCacheH = -1;
         let sunGradientCache = null;
 
         let gameState = 'title';
@@ -677,6 +677,85 @@
             powerupTimeLeft: 0, powerupTickTimer: 0, facing: 0, hazardTimer: 0, spikesTimer: 0
         };
 
+        // Applies/removes the screen-color-inversion effect tied to the secret Corrupted Data
+        // skin. Only #gameCanvas (the visible pixelated game view) gets inverted - HUD panels,
+        // buttons, and modals live in separate DOM layers, so they stay perfectly readable
+        // while equipped.
+        // Per-tick thematic world effects for equipped rare skins, called once per fixed
+        // physics step while gameState === 'playing'. Each effect is intentionally subtle -
+        // small trail particles or an occasional flicker - rather than anything that changes
+        // gameplay. Obstacle-gilding for the Gold skin lives inline at the tree-collision check
+        // instead of here, since it only needs to run at the moment of a bump.
+        function updateSkinWorldEffects() {
+            let skin = player.color;
+            let moving = (Math.abs(player.vx) + Math.abs(player.vy)) > 3;
+
+            // Glacier ("ice"): the ground the player slides across turns to snow for good.
+            if (skin === 'ice') {
+                let h = pixelToAxial(player.worldX, player.worldY);
+                let tile = hexTiles.get(hexKey(h.q, h.r));
+                if (tile && tile.type === 'land') iceFrostedTiles.add(tile);
+            }
+            // Magma ("lava"): the ground the player slides across stays charred and cracked
+            // forever - same permanent-scar pattern as Glacier's frost, plus embers still drift
+            // up from the trail while moving.
+            else if (skin === 'lava') {
+                let h = pixelToAxial(player.worldX, player.worldY);
+                let tile = hexTiles.get(hexKey(h.q, h.r));
+                if (tile && tile.type === 'land') lavaScorchedTiles.add(tile);
+                if (moving && Math.random() < 0.5) {
+                    flameParticles.push({ x: player.worldX + (Math.random()-0.5)*14, y: player.worldY + (Math.random()-0.5)*14, vx: (Math.random()-0.5)*1.2, vy: -0.4 - Math.random()*0.6, life: 0.7, maxLife: 0.7, size: 3 + Math.random()*4 });
+                }
+            }
+            // Toxic Sludge: the ground the player slides across stays pooled with glowing green
+            // ooze forever, plus drips continue trailing behind while moving.
+            else if (skin === 'toxic') {
+                let h = pixelToAxial(player.worldX, player.worldY);
+                let tile = hexTiles.get(hexKey(h.q, h.r));
+                if (tile && tile.type === 'land') toxicSludgeTiles.add(tile);
+                if (moving && Math.random() < 0.3) {
+                    splashes.push({ x: player.worldX + (Math.random()-0.5)*10, y: player.worldY + (Math.random()-0.5)*10, vx: 0, vy: 0, life: 1, maxLife: 1.1, type: 'drop', color: '#39ff14' });
+                }
+            }
+            // Fairy Dust ("sparkle"): the ground the player slides across blooms with tiny
+            // flowers forever, plus a trickle of twinkling sparkles still follows behind.
+            else if (skin === 'sparkle') {
+                let h = pixelToAxial(player.worldX, player.worldY);
+                let tile = hexTiles.get(hexKey(h.q, h.r));
+                if (tile && tile.type === 'land' && Math.random() < 0.5) fairyBloomTiles.add(tile);
+                if (Math.random() < 0.35) {
+                    leaves.push({ x: player.worldX + (Math.random()-0.5)*22, y: player.worldY + (Math.random()-0.5)*22, vx: (Math.random()-0.5), vy: -0.6 - Math.random()*0.6, life: 1.0, color: Math.random() > 0.5 ? '#fff' : '#ffb6c1', seed: Math.random() });
+                }
+            }
+            // Glitch: full-map TV static/matrix takeover lives in drawSkyBackground,
+            // drawHazardHoles, and the tree/rock render branches - just a rare tiny screen
+            // jitter here, "signal interference" on top of everything else.
+            else if (skin === 'glitch') {
+                if (Math.random() < 0.015) screenShake = Math.max(screenShake, 2 + Math.random()*2);
+            }
+            // Galaxy: shooting stars streak across the sky periodically while equipped.
+            else if (skin === 'galaxy') {
+                shootingStarTimer -= 1;
+                if (shootingStarTimer <= 0) {
+                    shootingStarTimer = 90 + Math.random() * 150;
+                    let sx = camera.x - 100, sy = camera.y + Math.random() * canvas.height * 0.5;
+                    shootingStars.push({ x: sx, y: sy, vx: 9 + Math.random()*4, vy: 3 + Math.random()*2, life: 1 });
+                }
+            }
+            if (shootingStars.length) {
+                for (let i = shootingStars.length - 1; i >= 0; i--) {
+                    let s = shootingStars[i];
+                    s.x += s.vx; s.y += s.vy; s.life -= 0.012;
+                    if (s.life <= 0) shootingStars.splice(i, 1);
+                }
+            }
+        }
+
+        function syncColorInvertEffect() {
+            displayCanvas.classList.toggle('color-inverted', player.color === 'corrupted');
+        }
+        syncColorInvertEffect();
+
         let pointerScreenX = window.innerWidth / 2; 
         let pointerScreenY = window.innerHeight / 2;
         
@@ -695,6 +774,19 @@
         let runItems = {};
         let companions = [];
         let playerTrail = [];
+        // Hex tiles the player has slid over while the Glacier ("ice") skin is equipped - these
+        // render with Snow-biome ground colors for the rest of the level (see drawIceFrostOverlay).
+        let iceFrostedTiles = new Set();
+        // Same permanent-trail pattern as iceFrostedTiles, one Set per rare skin that scars the
+        // map itself rather than just the character. Populated in updateSkinWorldEffects() and
+        // rendered in draw() right alongside the ice frost overlay.
+        let lavaScorchedTiles = new Set();   // Magma: ground stays charred/cracked forever
+        let toxicSludgeTiles = new Set();    // Toxic Sludge: ground stays pooled with ooze forever
+        let fairyBloomTiles = new Set();     // Fairy Dust: ground blooms with flowers forever
+        // Shooting stars for the Galaxy skin - each is {x,y,vx,vy,life}, spawned on a timer in
+        // updateSkinWorldEffects() and drawn in world space by drawSkyBackground.
+        let shootingStars = [];
+        let shootingStarTimer = 0;
         let shurikenSpin = 0;
         const roguelikeItemDefs = {
             magnet:      { id: 'magnet',      rarity: 'common',    name: 'Magnet' },
@@ -717,6 +809,9 @@
             { name: "Autumn", bg: "#e08a3e", grid: "#c9762f", treeBase: "#6b4226", treeTop: "#c1440e", rock: "#a67c52", decorColors: ['#c9762f', '#e0a83e', '#b5651d'], hazard: { type: 'water', color: '#2e6f8e', edge: '#6fa8c9' } }
         ];
         let currentTheme = themes[0];
+        // Referenced by the Glacier ("ice") skin's ground-frosting overlay (drawn in draw()),
+        // regardless of which theme the current level actually uses.
+        const snowTheme = themes.find(t => t.name === 'Snow');
 
         const enemyDB = {
             wanderer: { name: 'Slime', desc: 'Legend has it that eating slime can grant eternal life… Yuck.' },
@@ -767,6 +862,14 @@
             { id: "glitch", name: "Glitch", preview: "linear-gradient(90deg, #0ff, #f0f)", isAnimated: true },
             { id: "neon", name: "Neon Pulse", preview: "linear-gradient(45deg, #ff00ff, #00ffff)", isAnimated: true }
         ];
+
+        // Secret skins are never added to the gacha loot table (see rollGachaItem) - the only
+        // way to unlock one is the hidden trigger tied to it (see removeHatClickCount below).
+        // They're rendered in the Skins tab just like rareSkins, showing "???" until unlocked.
+        const secretSkins = [
+            { id: "corrupted", name: "Corrupted Data", preview: "repeating-linear-gradient(0deg, #000 0px, #000 4px, #39ff14 4px, #39ff14 6px, #ff003c 6px, #ff003c 8px)", isAnimated: true }
+        ];
+        const secretSkinsById = new Map(secretSkins.map(s => [s.id, s]));
 
         const hats = [
             { id: "cowboy", name: "Cowboy Hat" }, { id: "tophat", name: "Top Hat" },
@@ -982,6 +1085,13 @@
                 osc.type = 'triangle'; osc.frequency.setValueAtTime(1200, t); osc.frequency.exponentialRampToValueAtTime(400, t + 0.4);
                 gain.gain.setValueAtTime(userSettings.sfxVol * 0.7, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.4);
                 osc.start(t); osc.stop(t + 0.4);
+            } else if (type === 'secret_unlock') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(90, t); osc.frequency.setValueAtTime(880, t + 0.06);
+                osc.frequency.setValueAtTime(60, t + 0.1); osc.frequency.setValueAtTime(1200, t + 0.16);
+                osc.frequency.setValueAtTime(200, t + 0.22); osc.frequency.exponentialRampToValueAtTime(1600, t + 0.5);
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.5, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.55);
+                osc.start(t); osc.stop(t + 0.55);
             }
         }
 
@@ -1480,6 +1590,8 @@
             // reset the trail buffer they follow so they don't rush in from a previous level.
             companions = [];
             playerTrail = [];
+            iceFrostedTiles.clear();
+            lavaScorchedTiles.clear(); toxicSludgeTiles.clear(); fairyBloomTiles.clear();
             syncCompanionsToStack();
             
             let scaledLevel = Math.min(20, level);
@@ -1758,16 +1870,17 @@
             document.getElementById('tab-skins').addEventListener('click', () => switchShopTab('skins'));
             document.getElementById('tab-hats').addEventListener('click', () => switchShopTab('hats'));
             document.getElementById('btn-pull').addEventListener('click', pullGacha);
-            // Removing a hat also counts toward the hidden perf-overlay toggle: 20 CONSECUTIVE
-            // clicks on this specific button toggles the overlay. The streak is reset by the
-            // document-level click listener declared right below removeHatClickCount - any click
-            // on anything else breaks the streak back to 0.
+            // Removing a hat also counts toward two hidden 20-CONSECUTIVE-click toggles: the
+            // perf overlay, and the secret Corrupted Data glitch slime unlock. The streak is
+            // reset by the document-level click listener declared right below
+            // removeHatClickCount - any click on anything else breaks the streak back to 0.
             document.getElementById('btn-remove-hat').addEventListener('click', () => {
                 equipItem('hat', null);
                 removeHatClickCount++;
                 if (removeHatClickCount >= 20) {
                     removeHatClickCount = 0;
                     if (perfOverlay) perfOverlay.style.display = (perfOverlay.style.display === 'none') ? 'block' : 'none';
+                    unlockSecretGlitchSkin();
                 }
             });
             
@@ -2212,10 +2325,10 @@
             }
 
             if (skinsContainer) {
-                let allSkins = [...basicSkins, ...rareSkins];
+                let allSkins = [...basicSkins, ...rareSkins, ...secretSkins];
                 allSkins.forEach(s => {
                     let count = parseInt(storage.get('inv_' + s.id) || 0);
-                    let isRare = rareSkins.some(r => r.id === s.id);
+                    let isRare = rareSkins.some(r => r.id === s.id) || secretSkinsById.has(s.id);
                     let displayName = (count === 0 && isRare) ? "???" : s.name;
                     let div = document.createElement('div');
                     let isEquipped = player.color === s.id;
@@ -2232,10 +2345,31 @@
             }
         }
 
+        // Grants the secret "Corrupted Data" skin the first time 20 consecutive Remove Hat
+        // clicks are landed. Re-triggering after it's already unlocked just re-plays the toast
+        // (harmless, and confirms to a curious player that the streak still works) without
+        // stacking extra inventory count, since inv_corrupted is set to 1 rather than
+        // incremented like normal gacha pulls.
+        function unlockSecretGlitchSkin() {
+            let alreadyUnlocked = parseInt(storage.get('inv_corrupted') || 0) > 0;
+            storage.set('inv_corrupted', 1);
+            playSFX('secret_unlock');
+            showSecretUnlockToast();
+            if (!alreadyUnlocked) populateInventory();
+        }
+
+        function showSecretUnlockToast() {
+            let el = document.getElementById('secret-unlock-toast');
+            if (!el) return;
+            el.classList.remove('show');
+            requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+        }
+
         function equipItem(type, id) {
             if (type === 'skin') {
                 player.color = id;
                 storage.set('landSlidersSkin', id);
+                syncColorInvertEffect();
             } else if (type === 'hat') {
                 player.hat = id;
                 if (id) storage.set('landSlidersHat', id);
@@ -2523,6 +2657,10 @@
                         }
                     }
 
+                    // Thematic world effects tied to whichever rare skin is currently equipped
+                    // (ground-frosting, ember/sludge trails, subtle glitches, etc). See SECTION 6.
+                    updateSkinWorldEffects();
+
                     // --- Roguelite: Spikes item - periodic ice-nova volley ---
                     let spikesStacks = runItems.spikes || 0;
                     if (spikesStacks > 0) {
@@ -2740,6 +2878,14 @@
                             let d = Math.sqrt(distSq);
                             let overlap = collisionDist - d; let angle = Math.atan2(dy, dx);
                             player.worldX += Math.cos(angle) * overlap; player.worldY += Math.sin(angle) * overlap; player.vx *= 0.6; player.vy *= 0.6;
+                            // Pure Gold: whatever the player bumps into stays gilded for good.
+                            if (player.color === 'gold' && !t.golden) { t.golden = true; playSFX('coin', 0.7); }
+                            // Magma: bumped trees stay scorched/on fire for good.
+                            else if (player.color === 'lava' && !t.onFire) { t.onFire = true; playSFX('coin', 0.5); }
+                            // Toxic Sludge: bumped trees stay wilted/sickly for good.
+                            else if (player.color === 'toxic' && !t.wilted) { t.wilted = true; playSFX('coin', 0.5); }
+                            // Fairy Dust: bumped trees stay in bloom for good.
+                            else if (player.color === 'sparkle' && !t.blossomed) { t.blossomed = true; playSFX('coin', 0.5); }
                         }
                     }
                     {
@@ -2881,6 +3027,9 @@
         // still counts as a hazard for gameplay purposes (isSafe treats it the same as a hole),
         // it just isn't lava/water flavored out there.
         function drawSkyBackground() {
+            // Glitch: the sky is replaced entirely by old-TV static - skips the gradient/sun/
+            // cloud/bird layers below altogether while equipped.
+            if (player.color === 'glitch') { drawTVStatic(); return; }
             // PERF: both gradients below used to be rebuilt from scratch every single frame,
             // unconditionally, with camera.x/y baked directly into their coordinates. A
             // CanvasGradient's control points are evaluated against whatever transform is
@@ -2898,7 +3047,12 @@
                 skyGradientCache.addColorStop(0, '#6ec2ff'); skyGradientCache.addColorStop(0.55, '#8fd3ff'); skyGradientCache.addColorStop(1, '#d3f0ff');
                 skyGradientCacheH = canvas.height;
             }
-            ctx.fillStyle = skyGradientCache;
+            if (!voidSkyGradientCache || voidSkyGradientCacheH !== canvas.height) {
+                voidSkyGradientCache = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                voidSkyGradientCache.addColorStop(0, '#050510'); voidSkyGradientCache.addColorStop(0.55, '#1a0e2e'); voidSkyGradientCache.addColorStop(1, '#3d1f57');
+                voidSkyGradientCacheH = canvas.height;
+            }
+            ctx.fillStyle = player.color === 'void' ? voidSkyGradientCache : skyGradientCache;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Soft sun glow, fixed in world space so it drifts past naturally as the camera moves
@@ -2913,6 +3067,11 @@
             ctx.fillStyle = sunGradientCache;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.restore();
+
+            // Galaxy: a faint twinkling starfield drifts across the sky, fixed in world space
+            // like the sun glow above. Rainbow: a soft multi-band arch does the same.
+            if (player.color === 'galaxy') { drawGalaxyStars(); drawShootingStars(); }
+            else if (player.color === 'rainbow') drawRainbowArcs();
             ctx.restore();
 
             const driftSpeed = 8;
@@ -2990,11 +3149,156 @@
             ctx.fill();
         }
 
+        // Galaxy skin: sparse twinkling stars tiled the same way as the cloud/bird layers above
+        // (stable per-cell seed so identity doesn't shift frame-to-frame, only twinkle brightness
+        // does), drawn over the sky while the Galaxy rare skin is equipped.
+        function drawGalaxyStars() {
+            const spacingX = 130, spacingY = 130;
+            let iStart = Math.floor(camera.x / spacingX) - 2, iEnd = Math.ceil((camera.x + canvas.width) / spacingX) + 2;
+            let jStart = Math.floor(camera.y / spacingY) - 2, jEnd = Math.ceil((camera.y + canvas.height) / spacingY) + 2;
+            ctx.save(); ctx.fillStyle = '#fff';
+            for (let i = iStart; i <= iEnd; i++) {
+                for (let j = jStart; j <= jEnd; j++) {
+                    let seed = Math.abs(Math.sin(i * 12.9898 + j * 78.233 + 42.13) * 43758.5453); seed -= Math.floor(seed);
+                    if (seed > 0.3) continue;
+                    let sx = i * spacingX + seed * 90, sy = j * spacingY + ((seed * 53) % 1) * 90;
+                    ctx.globalAlpha = 0.35 + 0.35 * Math.sin(Date.now()/500 + seed*25);
+                    ctx.beginPath(); ctx.arc(sx, sy, 1 + seed * 1.4, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            ctx.restore();
+        }
+
+        // Galaxy skin: shooting stars streak across the sky on a timer (spawned/advanced in
+        // updateSkinWorldEffects), drawn with a fading tail in the same world-space convention
+        // as drawGalaxyStars.
+        function drawShootingStars() {
+            if (!shootingStars.length) return;
+            ctx.save();
+            for (let i = 0; i < shootingStars.length; i++) {
+                let s = shootingStars[i];
+                let tailX = s.x - s.vx * 6, tailY = s.y - s.vy * 6;
+                let grad = ctx.createLinearGradient(s.x, s.y, tailX, tailY);
+                grad.addColorStop(0, `rgba(255,255,255,${s.life})`); grad.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.strokeStyle = grad; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(tailX, tailY); ctx.stroke();
+                ctx.fillStyle = `rgba(255,255,255,${s.life})`;
+                ctx.beginPath(); ctx.arc(s.x, s.y, 1.8, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // Glitch: full-screen old-TV static, screen-fixed (not world space) since it's meant
+        // to read as a broken signal rather than part of the level. Cheap chunky cells since
+        // the whole frame gets downsampled through the pixelation pass anyway.
+        function drawTVStatic() {
+            ctx.save();
+            let cell = 14;
+            for (let x = 0; x < canvas.width; x += cell) {
+                for (let y = 0; y < canvas.height; y += cell) {
+                    let v = Math.random();
+                    ctx.fillStyle = v > 0.7 ? '#f2f2f2' : (v > 0.4 ? '#888' : (v > 0.15 ? '#333' : '#000'));
+                    ctx.fillRect(x, y, cell, cell);
+                }
+            }
+            // Occasional bright horizontal sync-roll bar tearing across the static.
+            if (Math.random() < 0.06) {
+                ctx.fillStyle = 'rgba(255,255,255,0.55)';
+                ctx.fillRect(0, Math.random() * canvas.height, canvas.width, 6 + Math.random()*14);
+            }
+            ctx.restore();
+        }
+
+        // Glitch: black hazard pockets get a constant scrolling green matrix-style digit
+        // rain instead of the usual water/lava/ice noise - drawn within whatever clip is
+        // already active (see drawHazardHoles).
+        function drawMatrixRain(cx, cy, span) {
+            ctx.save();
+            ctx.fillStyle = '#00ff41'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+            for (let x = cx - span; x < cx + span; x += 11) {
+                let colSeed = Math.abs(Math.sin(x * 0.17)) % 1;
+                let speed = 40 + colSeed * 70;
+                let offset = (Date.now()/1000 * speed + colSeed*400) % (span * 2.6);
+                for (let k = -1; k <= 4; k++) {
+                    let y = cy - span + offset + k * 13;
+                    if (y < cy - span || y > cy + span) continue;
+                    ctx.globalAlpha = k === 0 ? 1 : Math.max(0, 0.85 - k*0.22);
+                    ctx.fillText(Math.random() > 0.5 ? '1' : '0', x, y);
+                }
+            }
+            ctx.restore();
+        }
+
+        // Glitch: every tree renders as this "broken image" placeholder instead of its usual
+        // art - a bright pink box with a torn corner and the classic broken-picture glyph.
+        function drawMissingImageBox(x, y, radius) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x, y + radius*0.5, radius*0.85, radius*0.38, 0, 0, Math.PI*2); ctx.fill();
+            let w = radius * 1.7, h = radius * 1.7;
+            ctx.translate(x, y - h*0.15);
+            ctx.fillStyle = '#ff2fb2'; ctx.fillRect(-w/2, -h/2, w, h);
+            ctx.strokeStyle = '#7a0d51'; ctx.lineWidth = 3; ctx.strokeRect(-w/2, -h/2, w, h);
+            // Torn top-right corner
+            ctx.fillStyle = '#ffe0f5';
+            ctx.beginPath(); ctx.moveTo(w/2 - w*0.28, -h/2); ctx.lineTo(w/2, -h/2); ctx.lineTo(w/2, -h/2 + h*0.28); ctx.closePath(); ctx.fill();
+            // Classic broken-picture glyph: little "sun" + jagged "mountains"
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.arc(-w*0.18, -h*0.18, w*0.09, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(-w*0.32, h*0.22); ctx.lineTo(-w*0.08, -h*0.05); ctx.lineTo(w*0.08, h*0.1); ctx.lineTo(w*0.3, -h*0.18); ctx.lineTo(w*0.32, h*0.22);
+            ctx.closePath(); ctx.fill();
+            // Crack through the glyph
+            ctx.strokeStyle = '#7a0d51'; ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.moveTo(-w*0.1, -h*0.35); ctx.lineTo(w*0.05, -h*0.05); ctx.lineTo(-w*0.05, h*0.1); ctx.lineTo(w*0.12, h*0.4); ctx.stroke();
+            ctx.restore();
+        }
+
+        // Glitch: every rock renders as a garish pop-up ad box instead of its usual art, with
+        // a cycling flashy border, an "AD" badge, a red close button, and fake headline bars.
+        function drawPopupAdBox(x, y, radius) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(x, y + radius*0.55, radius*0.95, radius*0.4, 0, 0, Math.PI*2); ctx.fill();
+            let w = radius * 2.2, h = radius * 1.5;
+            ctx.translate(x, y - radius*0.25);
+            const flashColors = ['#ff003c', '#ffee00', '#00e5ff', '#39ff14'];
+            ctx.fillStyle = '#f4f6ff'; ctx.fillRect(-w/2, -h/2, w, h);
+            ctx.strokeStyle = flashColors[Math.floor(Date.now()/150) % flashColors.length]; ctx.lineWidth = 4; ctx.strokeRect(-w/2, -h/2, w, h);
+            // "AD" badge, top-left
+            ctx.fillStyle = '#ffcc00'; ctx.fillRect(-w/2 + 2, -h/2 + 2, w*0.22, h*0.24);
+            ctx.fillStyle = '#3d2b00'; ctx.font = `bold ${Math.max(8, h*0.16)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('AD', -w/2 + 2 + w*0.11, -h/2 + 2 + h*0.13);
+            // Red circular close button, top-right
+            ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(w/2 - h*0.14, -h/2 + h*0.14, h*0.13, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(w/2 - h*0.2, -h/2 + h*0.08); ctx.lineTo(w/2 - h*0.08, -h/2 + h*0.2);
+            ctx.moveTo(w/2 - h*0.08, -h/2 + h*0.08); ctx.lineTo(w/2 - h*0.2, -h/2 + h*0.2); ctx.stroke();
+            // Garish fake headline/body bars
+            ctx.fillStyle = '#e63946'; ctx.fillRect(-w*0.4, -h*0.05, w*0.8, h*0.12);
+            ctx.fillStyle = '#457b9d'; ctx.fillRect(-w*0.4, h*0.14, w*0.55, h*0.1);
+            ctx.restore();
+        }
+
+        // Rainbow skin: a soft, translucent multi-band arch fixed in world space (same "drifts
+        // past as the camera moves" convention as the sun glow), lighting up the sky while
+        // equipped.
+        function drawRainbowArcs() {
+            ctx.save();
+            let cx = 400, cy = 260, baseR = 460;
+            const bands = ['#ff3b3b', '#ff9f1c', '#ffe135', '#4caf50', '#3399ff', '#8e44ad'];
+            ctx.lineWidth = 15; ctx.lineCap = 'round';
+            for (let i = 0; i < bands.length; i++) {
+                ctx.globalAlpha = 0.5;
+                ctx.strokeStyle = bands[i];
+                ctx.beginPath(); ctx.arc(cx, cy, baseR - i * 15, Math.PI, Math.PI * 2); ctx.stroke();
+            }
+            ctx.restore();
+        }
+
         // Draws the animated water/lava/ice noise texture within a square region roughly `span`
         // wide, respecting whatever clip is already active on ctx. Shared by the small hazard
         // pockets that fill hex holes.
         function drawHazardTexture(cx, cy, span) {
-            let hz = currentTheme.hazard;
+            let hz = getActiveHazardTheme();
             ctx.save();
             ctx.strokeStyle = hz.edge; ctx.fillStyle = hz.edge;
             if (hz.type === 'water') { ctx.globalAlpha = 0.3; ctx.lineWidth = 3; }
@@ -3015,8 +3319,22 @@
 
         // Hazard (water/lava/ice) only ever fills the interior holes left by hex generation -
         // never the outer edge of the map, which is sky instead (see drawSkyBackground).
+        // The Void skin recolors hazard water/lava/ice pockets to black/deep-purple instead of
+        // the theme's usual palette. Everything else about the hazard (its type/behavior) is
+        // untouched - purely a visual override consumed by drawHazardHoles/drawHazardTexture.
+        function getActiveHazardTheme() {
+            if (player.color === 'void') return { type: currentTheme.hazard.type, color: '#0d0621', edge: '#4b0082' };
+            // Galaxy: hazard pockets become miniature starfields instead of the theme's usual
+            // water/lava/ice - drawHazardHoles sprinkles twinkling stars on top of this base.
+            if (player.color === 'galaxy') return { type: currentTheme.hazard.type, color: '#0a0e2e', edge: '#7597de' };
+            // Glitch: hazard pockets turn solid black with a green matrix-digit edge -
+            // drawHazardHoles fills them with scrolling digit rain instead of the usual texture.
+            if (player.color === 'glitch') return { type: currentTheme.hazard.type, color: '#000000', edge: '#00ff41' };
+            return currentTheme.hazard;
+        }
+
         function drawHazardHoles() {
-            let hz = currentTheme.hazard;
+            let hz = getActiveHazardTheme();
             let buf = HEX_SIZE * 2;
             // PERF: same grid-narrowing as computeVisibleLandTiles - only check candidates from
             // cells overlapping the viewport instead of every hole in the level.
@@ -3032,7 +3350,23 @@
                 ctx.beginPath(); ctx.moveTo(c[0].x, c[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(c[i].x, c[i].y); ctx.closePath();
                 ctx.fillStyle = hz.color; ctx.fill();
                 ctx.clip();
-                drawHazardTexture(tile.x, tile.y, HEX_SIZE);
+                if (player.color === 'galaxy') {
+                    // Little starfield swirl instead of the usual water/lava/ice noise - the
+                    // hazard pocket becomes a tiny patch of open space.
+                    for (let si = 0; si < 6; si++) {
+                        let sa = (si / 6) * Math.PI * 2 + Date.now()/2000;
+                        let sr = HEX_SIZE * (0.2 + (si % 3) * 0.25);
+                        let sxp = tile.x + Math.cos(sa) * sr, syp = tile.y + Math.sin(sa) * sr;
+                        ctx.globalAlpha = 0.4 + 0.4 * Math.sin(Date.now()/300 + si*10);
+                        ctx.fillStyle = '#fff';
+                        ctx.beginPath(); ctx.arc(sxp, syp, 1.4, 0, Math.PI*2); ctx.fill();
+                    }
+                    ctx.globalAlpha = 1;
+                } else if (player.color === 'glitch') {
+                    drawMatrixRain(tile.x, tile.y, HEX_SIZE);
+                } else {
+                    drawHazardTexture(tile.x, tile.y, HEX_SIZE);
+                }
                 ctx.restore();
                 ctx.save();
                 ctx.lineWidth = 4; ctx.strokeStyle = hz.edge;
@@ -3059,21 +3393,15 @@
             if (basicMatch) fillColor = basicMatch.color;
             else if (colorId === 'rainbow') { fillColor = `hsl(${(t / 5) % 360}, 100%, 50%)`; drawSpecial = 'rainbow'; }
             else if (colorId === 'gold') {
-                fillColor = getCharGradient('gold', radius, (r) => {
-                    let grad = c.createLinearGradient(-r, -r, r, r);
-                    grad.addColorStop(0, '#bf953f'); grad.addColorStop(0.5, '#fcf6ba'); grad.addColorStop(1, '#b38728');
-                    return grad;
-                });
-                drawSpecial = 'gold';
+                let grad = c.createLinearGradient(-radius, -radius, radius, radius);
+                grad.addColorStop(0, '#bf953f'); grad.addColorStop(0.5, '#fcf6ba'); grad.addColorStop(1, '#b38728');
+                fillColor = grad; drawSpecial = 'gold';
             }
             else if (colorId === 'lava') { fillColor = `rgb(${180 + Math.sin(t/150)*75}, ${40 + Math.sin(t/200)*20}, 0)`; drawSpecial = 'lava'; }
             else if (colorId === 'galaxy') {
-                fillColor = getCharGradient('galaxy', radius, (r) => {
-                    let grad = c.createRadialGradient(0, 0, 0, 0, 0, r*1.5);
-                    grad.addColorStop(0, '#2b1055'); grad.addColorStop(1, '#7597de');
-                    return grad;
-                });
-                drawSpecial = 'galaxy';
+                let grad = c.createRadialGradient(0, 0, 0, 0, 0, radius*1.5);
+                grad.addColorStop(0, '#2b1055'); grad.addColorStop(1, '#7597de');
+                fillColor = grad; drawSpecial = 'galaxy';
             }
             else if (colorId === 'ice') { fillColor = `rgba(165, 242, 243, ${0.8 + Math.sin(t/300)*0.2})`; drawSpecial = 'ice'; }
             else if (colorId === 'toxic') { fillColor = `rgb(${50 + Math.sin(t/100)*50}, 255, 50)`; drawSpecial = 'toxic'; }
@@ -3081,14 +3409,17 @@
             else if (colorId === 'sparkle') { fillColor = '#ffb6c1'; drawSpecial = 'sparkle'; }
             else if (colorId === 'glitch') { fillColor = Math.random() > 0.8 ? '#0ff' : (Math.random() > 0.5 ? '#f0f' : '#fff'); drawSpecial = 'glitch'; }
             else if (colorId === 'neon') { fillColor = `hsl(${(t / 2) % 360}, 100%, 70%)`; drawSpecial = 'neon'; }
+            // Secret skin: dark corrupted-video-signal palette (near-black/toxic-green/error-red),
+            // deliberately distinct from the cyan/magenta/white 'glitch' rare skin above.
+            else if (colorId === 'corrupted') { fillColor = Math.random() > 0.9 ? '#ff003c' : (Math.random() > 0.5 ? '#001a00' : '#0d0d0d'); drawSpecial = 'corrupted'; }
 
             c.save(); c.translate(x, renderY); c.scale(stretchX / stretchY, stretchY / stretchX);
             let r = radius;
 
             // Soft outer glow behind especially flashy rare skins
-            if (drawSpecial === 'neon' || drawSpecial === 'void' || drawSpecial === 'toxic') {
+            if (drawSpecial === 'neon' || drawSpecial === 'void' || drawSpecial === 'toxic' || drawSpecial === 'corrupted') {
                 c.save();
-                let glowColor = drawSpecial === 'neon' ? fillColor : (drawSpecial === 'toxic' ? '#39ff14' : '#8e44ad');
+                let glowColor = drawSpecial === 'neon' ? fillColor : (drawSpecial === 'toxic' ? '#39ff14' : (drawSpecial === 'corrupted' ? '#ff003c' : '#8e44ad'));
                 c.globalAlpha = 0.22 + Math.sin(t/200)*0.08;
                 c.fillStyle = glowColor;
                 c.beginPath(); c.arc(0, 0, r * 1.35, 0, Math.PI*2); c.fill();
@@ -3135,6 +3466,20 @@
                 c.save(); c.globalAlpha = 0.5; c.fillStyle = Math.random() > 0.5 ? '#0ff' : '#f0f';
                 c.translate((Math.random()-0.5)*6, (Math.random()-0.5)*6);
                 c.beginPath(); c.moveTo(-r, r * 0.5); c.lineTo(r, r*0.5); c.lineTo(0, -r); c.closePath(); c.fill(); c.restore();
+            } else if (drawSpecial === 'corrupted') {
+                // Horizontal datamosh scan-lines that jitter position/color every frame, rather
+                // than glitch's single displaced triangle - reads as "signal corruption" instead
+                // of a simple color-swap flicker.
+                c.save(); c.beginPath(); c.ellipse(0, 0, r * 1.05, r * 1.1, 0, 0, Math.PI * 2); c.clip();
+                for (let i = 0; i < 4; i++) {
+                    let sliceY = (Math.random() - 0.5) * r * 2;
+                    let sliceH = 1.5 + Math.random() * 4;
+                    let offset = (Math.random() - 0.5) * 16;
+                    c.globalAlpha = 0.6;
+                    c.fillStyle = Math.random() > 0.5 ? '#39ff14' : '#ff003c';
+                    c.fillRect(-r * 1.2 + offset, sliceY, r * 2.4, sliceH);
+                }
+                c.restore();
             } else if (drawSpecial === 'rainbow') {
                 c.globalAlpha = 0.3; c.fillStyle = '#fff';
                 c.beginPath(); c.ellipse(0, 0, r*0.9, r*0.3, Math.sin(t/400)*0.5, 0, Math.PI*2); c.fill(); c.globalAlpha = 1;
@@ -3147,7 +3492,7 @@
             // Eyes & Face
             let eyeOffsetX = Math.max(-8, Math.min(8, (vx / 10) * 4 + leanX * 0.15)) * (radius/22);
             let eyeOffsetY = Math.max(-8, Math.min(8, (vy / 10) * 4 + leanY * 0.15)) * (radius/22);
-            let eyeColor = (colorId === 'black' || colorId === 'void' || colorId === 'galaxy') ? '#fff' : '#1a1a2e'; c.fillStyle = eyeColor;
+            let eyeColor = (colorId === 'black' || colorId === 'void' || colorId === 'galaxy' || colorId === 'corrupted') ? '#fff' : '#1a1a2e'; c.fillStyle = eyeColor;
             c.beginPath(); c.arc(-8*(radius/22) + eyeOffsetX, -6*(radius/22) + eyeOffsetY, 4*(radius/22), 0, Math.PI*2); c.fill(); 
             c.beginPath(); c.arc(8*(radius/22) + eyeOffsetX, -6*(radius/22) + eyeOffsetY, 4*(radius/22), 0, Math.PI*2); c.fill();
             
@@ -3163,34 +3508,26 @@
                 
                 if (hatId === 'cowboy') {
                     c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(0, 6, r*1.32, r*0.36, 0, 0, Math.PI*2); c.fill();
-                    let brimGrad = getCharGradient('hat_cowboy_brim', r, (rr) => {
-                        let g = c.createLinearGradient(0, -rr*0.1, 0, rr*0.15);
-                        g.addColorStop(0, '#a0672c'); g.addColorStop(1, '#6e4419'); return g;
-                    });
+                    let brimGrad = c.createLinearGradient(0, -r*0.1, 0, r*0.15);
+                    brimGrad.addColorStop(0, '#a0672c'); brimGrad.addColorStop(1, '#6e4419');
                     c.fillStyle = brimGrad; c.beginPath(); c.ellipse(0, 5, r*1.3, r*0.35, 0, 0, Math.PI*2); c.fill();
                     c.strokeStyle = '#5a3714'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, 5, r*1.3, r*0.35, 0, 0, Math.PI*2); c.stroke();
-                    let domeGrad = getCharGradient('hat_cowboy_dome', r, (rr) => {
-                        let g = c.createLinearGradient(-rr*0.6, -rr*0.7, rr*0.6, 0);
-                        g.addColorStop(0, '#c17f3e'); g.addColorStop(1, '#8b5a2b'); return g;
-                    });
+                    let domeGrad = c.createLinearGradient(-r*0.6, -r*0.7, r*0.6, 0);
+                    domeGrad.addColorStop(0, '#c17f3e'); domeGrad.addColorStop(1, '#8b5a2b');
                     c.fillStyle = domeGrad; c.beginPath(); c.roundRect(-r*0.6, -r*0.7, r*1.2, r*0.8, 5); c.fill();
                     c.fillStyle = '#5a3714'; c.fillRect(-r*0.6, -r*0.22, r*1.2, r*0.14);
                 } else if (hatId === 'tophat') {
                     c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(0, 6, r*1.12, r*0.27, 0, 0, Math.PI*2); c.fill();
                     c.fillStyle = '#111'; c.beginPath(); c.ellipse(0, 5, r*1.1, r*0.25, 0, 0, Math.PI*2); c.fill();
-                    let topGrad = getCharGradient('hat_tophat', r, (rr) => {
-                        let g = c.createLinearGradient(-rr*0.65, -rr, rr*0.65, 0);
-                        g.addColorStop(0, '#2b2b2b'); g.addColorStop(0.5, '#111'); g.addColorStop(1, '#000'); return g;
-                    });
+                    let topGrad = c.createLinearGradient(-r*0.65, -r, r*0.65, 0);
+                    topGrad.addColorStop(0, '#2b2b2b'); topGrad.addColorStop(0.5, '#111'); topGrad.addColorStop(1, '#000');
                     c.fillStyle = topGrad; c.fillRect(-r*0.65, -r, r*1.3, r);
                     c.fillStyle = '#e74c3c'; c.fillRect(-r*0.65, -r*0.3, r*1.3, r*0.3);
                     c.strokeStyle = '#000'; c.lineWidth = 1; c.strokeRect(-r*0.65, -r*0.3, r*1.3, r*0.3);
                     c.fillStyle = 'rgba(255,255,255,0.15)'; c.fillRect(-r*0.5, -r*0.95, r*0.18, r*0.65);
                 } else if (hatId === 'crown') {
-                    let crownGrad = getCharGradient('hat_crown', r, (rr) => {
-                        let g = c.createLinearGradient(-rr*0.9, -rr, rr*0.9, 5);
-                        g.addColorStop(0, '#fff2a8'); g.addColorStop(0.5, '#f1c40f'); g.addColorStop(1, '#c9960b'); return g;
-                    });
+                    let crownGrad = c.createLinearGradient(-r*0.9, -r, r*0.9, 5);
+                    crownGrad.addColorStop(0, '#fff2a8'); crownGrad.addColorStop(0.5, '#f1c40f'); crownGrad.addColorStop(1, '#c9960b');
                     c.fillStyle = crownGrad;
                     c.beginPath(); c.moveTo(-r*0.7, 5); c.lineTo(r*0.7, 5); c.lineTo(r*0.9, -r*0.8); c.lineTo(r*0.3, -r*0.3); c.lineTo(0, -r); c.lineTo(-r*0.3, -r*0.3); c.lineTo(-r*0.9, -r*0.8); c.closePath(); c.fill();
                     c.strokeStyle = '#a5730a'; c.lineWidth = 1.5; c.stroke();
@@ -3204,10 +3541,8 @@
                     c.fillStyle = '#3498db'; c.beginPath(); c.arc(-r*0.35, -r*0.15, 2, 0, Math.PI*2); c.arc(r*0.35, -r*0.15, 2, 0, Math.PI*2); c.fill();
                     c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(-r*0.15, -r*0.6, 1.5, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'beanie') {
-                    let beanieGrad = getCharGradient('hat_beanie', r, (rr) => {
-                        let g = c.createLinearGradient(0, -rr*0.8, 0, rr*0.2);
-                        g.addColorStop(0, '#5dade2'); g.addColorStop(1, '#2e86c1'); return g;
-                    });
+                    let beanieGrad = c.createLinearGradient(0, -r*0.8, 0, r*0.2);
+                    beanieGrad.addColorStop(0, '#5dade2'); beanieGrad.addColorStop(1, '#2e86c1');
                     c.fillStyle = beanieGrad; c.beginPath(); c.arc(0, 5, r*0.8, Math.PI, 0); c.fill();
                     c.strokeStyle = 'rgba(255,255,255,0.3)'; c.lineWidth = 1.5;
                     for (let i=-2; i<=2; i++) { c.beginPath(); c.moveTo(i*r*0.15, 4); c.lineTo(i*r*0.18, -r*0.7); c.stroke(); }
@@ -3216,10 +3551,8 @@
                     c.fillStyle = 'rgba(255,255,255,0.4)'; c.beginPath(); c.arc(-r*0.08, -r*0.85+5, r*0.08, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'bow') {
                     c.fillStyle = 'rgba(0,0,0,0.2)'; c.beginPath(); c.ellipse(0, 0, r*0.75, r*0.5, 0, 0, Math.PI*2); c.fill();
-                    let bowGrad = getCharGradient('hat_bow', r, (rr) => {
-                        let g = c.createLinearGradient(-rr*0.7, 0, rr*0.7, 0);
-                        g.addColorStop(0, '#ff6b81'); g.addColorStop(1, '#e74c3c'); return g;
-                    });
+                    let bowGrad = c.createLinearGradient(-r*0.7, 0, r*0.7, 0);
+                    bowGrad.addColorStop(0, '#ff6b81'); bowGrad.addColorStop(1, '#e74c3c');
                     c.fillStyle = bowGrad;
                     c.beginPath(); c.moveTo(0,-r*0.2); c.lineTo(-r*0.7, -r*0.7); c.lineTo(-r*0.7, r*0.3); c.closePath(); c.fill();
                     c.beginPath(); c.moveTo(0,-r*0.2); c.lineTo(r*0.7, -r*0.7); c.lineTo(r*0.7, r*0.3); c.closePath(); c.fill();
@@ -3231,10 +3564,8 @@
                     c.strokeStyle = '#f1c40f'; c.lineWidth = 4; c.beginPath(); c.ellipse(0, -r*0.6, r*0.9, r*0.25, 0, 0, Math.PI*2); c.stroke();
                     c.strokeStyle = '#fff9c4'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(0, -r*0.65, r*0.85, r*0.2, 0, 0, Math.PI*2); c.stroke();
                 } else if (hatId === 'party') {
-                    let partyGrad = getCharGradient('hat_party', r, (rr) => {
-                        let g = c.createLinearGradient(0, 5, 0, -rr*1.2);
-                        g.addColorStop(0, '#a569bd'); g.addColorStop(1, '#7d3c98'); return g;
-                    });
+                    let partyGrad = c.createLinearGradient(0, 5, 0, -r*1.2);
+                    partyGrad.addColorStop(0, '#a569bd'); partyGrad.addColorStop(1, '#7d3c98');
                     c.fillStyle = partyGrad; c.beginPath(); c.moveTo(-r*0.6, 5); c.lineTo(r*0.6, 5); c.lineTo(0, -r*1.2); c.closePath(); c.fill();
                     c.strokeStyle = '#5b2c6f'; c.lineWidth = 1; c.stroke();
                     c.fillStyle = '#f1c40f'; c.beginPath(); c.moveTo(-r*0.3, -r*0.3); c.lineTo(0.2, -r*0.1); c.lineTo(-r*0.1, -r*0.5); c.fill();
@@ -3244,10 +3575,8 @@
                     c.fillStyle = '#e74c3c'; c.beginPath(); c.arc(-r*0.25, -r*0.05, 3, 0, Math.PI*2); c.arc(r*0.25, -r*0.85, 3, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'pirate') {
                     c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(0, 6, r*1.22, r*0.3, 0, 0, Math.PI*2); c.fill();
-                    let pirateGrad = getCharGradient('hat_pirate', r, (rr) => {
-                        let g = c.createLinearGradient(0, -rr*0.8, 0, 5);
-                        g.addColorStop(0, '#333'); g.addColorStop(1, '#111'); return g;
-                    });
+                    let pirateGrad = c.createLinearGradient(0, -r*0.8, 0, 5);
+                    pirateGrad.addColorStop(0, '#333'); pirateGrad.addColorStop(1, '#111');
                     c.fillStyle = pirateGrad;
                     c.beginPath(); c.moveTo(-r*1.2, 5); c.lineTo(r*1.2, 5); c.lineTo(r*0.7, -r*0.8); c.lineTo(-r*0.7, -r*0.8); c.closePath(); c.fill();
                     c.strokeStyle = '#f1c40f'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(-r*1.15, 3); c.lineTo(r*1.15, 3); c.stroke();
@@ -3256,10 +3585,8 @@
                     c.fillRect(-r*0.04, -r*0.06, r*0.08, r*0.1);
                     c.fillStyle = '#f1c40f'; c.beginPath(); c.arc(-r*0.9, 0, 3, 0, Math.PI*2); c.arc(r*0.9, 0, 3, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'cap') {
-                    let capGrad = getCharGradient('hat_cap', r, (rr) => {
-                        let g = c.createLinearGradient(0, -rr*0.6, 0, 5);
-                        g.addColorStop(0, '#ff6b6b'); g.addColorStop(1, '#c0392b'); return g;
-                    });
+                    let capGrad = c.createLinearGradient(0, -r*0.6, 0, 5);
+                    capGrad.addColorStop(0, '#ff6b6b'); capGrad.addColorStop(1, '#c0392b');
                     c.fillStyle = capGrad; c.beginPath(); c.arc(0, 5, r*0.7, Math.PI, 0); c.fill();
                     c.strokeStyle = 'rgba(255,255,255,0.25)'; c.lineWidth = 1;
                     c.beginPath(); c.moveTo(-r*0.5, 4); c.quadraticCurveTo(0, -r*0.65, r*0.5, 4); c.stroke();
@@ -3267,16 +3594,12 @@
                     c.fillStyle = 'rgba(0,0,0,0.15)'; c.fillRect(0, 3, r*1.2, 2);
                     c.fillStyle = '#fff'; c.beginPath(); c.arc(0, -r*0.55, 2, 0, Math.PI*2); c.fill();
                 } else if (hatId === 'horns') {
-                    let hornGrad = getCharGradient('hat_horns_l', r, (rr) => {
-                        let g = c.createLinearGradient(-rr*0.9, -rr*0.8, -rr*0.1, 5);
-                        g.addColorStop(0, '#e74c3c'); g.addColorStop(1, '#8b1a1a'); return g;
-                    });
+                    let hornGrad = c.createLinearGradient(-r*0.9, -r*0.8, -r*0.1, 5);
+                    hornGrad.addColorStop(0, '#e74c3c'); hornGrad.addColorStop(1, '#8b1a1a');
                     c.fillStyle = hornGrad;
                     c.beginPath(); c.moveTo(-r*0.3, 5); c.quadraticCurveTo(-r*0.7, -r*0.6, -r*0.9, -r*0.8); c.quadraticCurveTo(-r*0.5, -r*0.3, -r*0.1, 5); c.fill();
-                    let hornGrad2 = getCharGradient('hat_horns_r', r, (rr) => {
-                        let g = c.createLinearGradient(rr*0.1, -rr*0.8, rr*0.9, 5);
-                        g.addColorStop(0, '#8b1a1a'); g.addColorStop(1, '#e74c3c'); return g;
-                    });
+                    let hornGrad2 = c.createLinearGradient(r*0.1, -r*0.8, r*0.9, 5);
+                    hornGrad2.addColorStop(0, '#8b1a1a'); hornGrad2.addColorStop(1, '#e74c3c');
                     c.fillStyle = hornGrad2;
                     c.beginPath(); c.moveTo(r*0.3, 5); c.quadraticCurveTo(r*0.7, -r*0.6, r*0.9, -r*0.8); c.quadraticCurveTo(r*0.5, -r*0.3, r*0.1, 5); c.fill();
                     c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 1;
@@ -3326,6 +3649,88 @@
             ctx.save(); ctx.lineWidth = 6; ctx.strokeStyle = currentTheme.hazard.edge;
             pathHexUnion(ctx, visLand); ctx.stroke();
             ctx.fillStyle = currentTheme.bg; ctx.fill(); ctx.clip();
+            // Glitch: while equipped, the entire visible floor renders solid black - overrides
+            // the theme ground color set just above, same clip already active.
+            if (player.color === 'glitch') { ctx.fillStyle = '#000'; ctx.fill(); }
+            // Glacier ("ice") skin: hexes the player has slid over stay snow-frosted, still
+            // clipped to the land shape above so it never bleeds past the honeycomb edge.
+            if (iceFrostedTiles.size) {
+                let frostedVisible = visLand.filter(t => iceFrostedTiles.has(t));
+                if (frostedVisible.length) {
+                    ctx.save();
+                    pathHexUnion(ctx, frostedVisible);
+                    ctx.globalAlpha = 0.85; ctx.fillStyle = snowTheme.bg; ctx.fill();
+                    ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.restore();
+                }
+            }
+            // Magma: ground the player has slid over stays charred and cracked forever, with
+            // slow-pulsing molten cracks glowing through.
+            if (lavaScorchedTiles.size) {
+                let scorchedVisible = visLand.filter(t => lavaScorchedTiles.has(t));
+                if (scorchedVisible.length) {
+                    ctx.save();
+                    pathHexUnion(ctx, scorchedVisible);
+                    ctx.globalAlpha = 0.8; ctx.fillStyle = '#241209'; ctx.fill();
+                    ctx.globalAlpha = 0.5 + Math.sin(Date.now()/400) * 0.25;
+                    ctx.strokeStyle = '#ff6b1a'; ctx.lineWidth = 1.5; ctx.stroke();
+                    ctx.restore();
+                }
+            }
+            // Toxic Sludge: ground the player has slid over stays pooled with glowing green
+            // ooze forever, with slow bubbles rising through it.
+            if (toxicSludgeTiles.size) {
+                let sludgeVisible = visLand.filter(t => toxicSludgeTiles.has(t));
+                if (sludgeVisible.length) {
+                    ctx.save();
+                    pathHexUnion(ctx, sludgeVisible);
+                    ctx.globalAlpha = 0.65; ctx.fillStyle = '#1a3d0a'; ctx.fill();
+                    ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(57,255,20,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.clip();
+                    ctx.fillStyle = 'rgba(57,255,20,0.5)';
+                    for (let bi = 0; bi < sludgeVisible.length; bi++) {
+                        let bt = sludgeVisible[bi]; let bp = (Date.now()/900 + bt.x*0.01 + bt.y*0.01) % 1;
+                        ctx.globalAlpha = 0.5 * (1 - bp);
+                        ctx.beginPath(); ctx.arc(bt.x + Math.sin(bt.x)*10, bt.y - bp*20, 3 + bp*3, 0, Math.PI*2); ctx.fill();
+                    }
+                    ctx.restore();
+                }
+            }
+            // Fairy Dust: ground the player has slid over stays in permanent bloom, dotted
+            // with tiny pastel flowers.
+            if (fairyBloomTiles.size) {
+                let bloomVisible = visLand.filter(t => fairyBloomTiles.has(t));
+                if (bloomVisible.length) {
+                    ctx.save();
+                    for (let bi = 0; bi < bloomVisible.length; bi++) {
+                        let bt = bloomVisible[bi];
+                        for (let pi = 0; pi < 2; pi++) {
+                            let pa = (bt.x*0.7 + bt.y*1.3 + pi*47) % 6.28;
+                            let px = bt.x + Math.cos(pa) * 12, py = bt.y + Math.sin(pa) * 12;
+                            ctx.fillStyle = (pi + Math.floor(bt.x)) % 2 === 0 ? '#ffb6c1' : '#fff59d';
+                            ctx.beginPath(); ctx.arc(px, py, 2.6, 0, Math.PI*2); ctx.fill();
+                        }
+                    }
+                    ctx.restore();
+                }
+            }
+            // Glitch: the black floor very, very rarely flickers a column of scrolling green
+            // matrix-style digits into view for a single frame - re-rolled fresh every frame
+            // per visible tile, so it never lingers in one place like the other skins' trails.
+            if (player.color === 'glitch') {
+                ctx.save();
+                ctx.fillStyle = '#00ff41'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+                for (let li = 0; li < visLand.length; li++) {
+                    if (Math.random() > 0.0025) continue;
+                    let lt = visLand[li];
+                    let scrollOffset = (Date.now()/60) % 10;
+                    ctx.globalAlpha = 0.85;
+                    for (let ch = 0; ch < 5; ch++) {
+                        ctx.fillText(Math.random() > 0.5 ? '1' : '0', lt.x, lt.y - 20 + ch*10 + scrollOffset);
+                    }
+                }
+                ctx.restore();
+            }
             ctx.strokeStyle = currentTheme.grid; ctx.lineWidth = 4;
             const startX = Math.floor((camera.x - tiltX) / gridSize) * gridSize; const startY = Math.floor((camera.y - tiltY) / gridSize) * gridSize;
             // Build one path for every visible dust mark and stroke it once, instead of a
@@ -3359,6 +3764,21 @@
                 }
             }
             ctx.restore(); 
+
+            // Neon Pulse skin: a glowing trail follows the player, reusing the same
+            // playerTrail history the roguelite companion slimes already track (SECTION 6).
+            if (player.color === 'neon' && playerTrail.length > 1) {
+                ctx.save();
+                let neonHue = (Date.now() / 4) % 360;
+                ctx.strokeStyle = `hsl(${neonHue}, 100%, 60%)`;
+                ctx.shadowColor = `hsl(${neonHue}, 100%, 60%)`; ctx.shadowBlur = 14;
+                ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.globalAlpha = 0.55;
+                let trailSteps = Math.min(50, playerTrail.length);
+                ctx.beginPath(); ctx.moveTo(playerTrail[0].x, playerTrail[0].y);
+                for (let i = 1; i < trailSteps; i++) ctx.lineTo(playerTrail[i].x, playerTrail[i].y);
+                ctx.stroke();
+                ctx.restore();
+            }
 
             rqCount = 0;
             // PERF: was a full trees.length scan checking isOnScreen on every tree every frame
@@ -3405,16 +3825,30 @@
                 if (isWaterObj) { ctx.save(); ctx.translate(-tiltX, -tiltY); } // Undo tilt for water objects
 
                 if (item.type === 'tree') {
-                    let t = item.obj; let variant = t.variant || 0; let sway = (currentTheme.name === 'Desert' ? 0 : Math.sin(Date.now()/1400 + (t.seed||0)) * 0.05) + breezeX;
+                    let t = item.obj;
+                    // Glitch: every tree renders as a classic "broken image" placeholder
+                    // instead of its normal art, all the time (not just ones the player's
+                    // bumped) - the sky/hazard/floor takeover happens elsewhere in draw().
+                    if (player.color === 'glitch') { drawMissingImageBox(t.x, t.y, t.radius); return; }
+                    let variant = t.variant || 0; let sway = (currentTheme.name === 'Desert' ? 0 : Math.sin(Date.now()/1400 + (t.seed||0)) * 0.05) + breezeX;
                     if (t.type === 'tree' && currentTheme.name !== 'Desert' && currentTheme.name !== 'Snow') {
                         if (Math.abs(player.vx) + Math.abs(player.vy) > 12 && Math.random() < 0.06 && dist(player.worldX, player.worldY, t.x, t.y) < 600) {
                             leaves.push({ x: t.x + (Math.random()-0.5)*t.radius, y: t.y - t.radius*0.5 + (Math.random()-0.5)*t.radius, vx: player.vx * 0.3 + (Math.random()-0.5)*2, vy: player.vy * 0.3 + (Math.random()-0.5)*2, life: 1.0, color: currentTheme.treeTop, seed: Math.random() });
                         }
                     }
+                    // Pure Gold: obstacles the player has bumped stay gilded (see the tree-collision
+                    // check in update()), overriding this tree's usual theme colors below.
+                    let goldGrad = null;
+                    if (t.golden) { goldGrad = ctx.createLinearGradient(t.x - t.radius, t.y - t.radius, t.x + t.radius, t.y + t.radius); goldGrad.addColorStop(0, '#fff7c2'); goldGrad.addColorStop(0.5, '#ffcc00'); goldGrad.addColorStop(1, '#8a5a00'); }
+                    // Magma/Toxic: bumped trees (see the tree-collision check in update()) get a
+                    // permanent scorched or wilted base palette, same override pattern as gold.
+                    let treeBaseColor = t.golden ? '#8a5a00' : t.onFire ? '#2b1a12' : t.wilted ? '#4a3a2a' : currentTheme.treeBase;
+                    let treeTopColor = t.golden ? goldGrad : t.onFire ? '#3d1f0a' : t.wilted ? '#5c6b3f' : currentTheme.treeTop;
+                    let treeAccentColor = t.golden ? '#fff7c2' : t.onFire ? '#ff6b1a' : t.wilted ? '#8a9a5f' : (currentTheme.name === "Snow" ? "#fff" : "#388e3c");
                     ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(t.x, t.y + t.radius * 0.5, t.radius * 0.85, t.radius * 0.38, 0, 0, Math.PI*2); ctx.fill();
-                    ctx.fillStyle = currentTheme.treeBase; ctx.fillRect(t.x - t.radius*0.2, t.y - t.radius*0.1, t.radius*0.4, t.radius*0.9);
+                    ctx.fillStyle = treeBaseColor; ctx.fillRect(t.x - t.radius*0.2, t.y - t.radius*0.1, t.radius*0.4, t.radius*0.9);
                     ctx.save(); ctx.translate(t.x, t.y - t.radius*0.1); ctx.rotate(sway); ctx.translate(-t.x, -(t.y - t.radius*0.1));
-                    ctx.fillStyle = currentTheme.treeTop;
+                    ctx.fillStyle = treeTopColor;
                     if(currentTheme.name === "Desert" || currentTheme.name === "Volcano") {
                         if (variant === 1) {
                             ctx.beginPath(); ctx.arc(t.x, t.y - t.radius*0.3, t.radius*0.65, 0, Math.PI*2); ctx.fill();
@@ -3428,20 +3862,60 @@
                     } else {
                         if (variant === 1) {
                             ctx.beginPath(); ctx.arc(t.x, t.y - t.radius*0.55, t.radius*0.9, 0, Math.PI*2); ctx.fill();
-                            ctx.fillStyle = currentTheme.name === "Snow" ? "#fff" : "#388e3c"; ctx.beginPath(); ctx.arc(t.x, t.y - t.radius*0.7, t.radius*0.65, 0, Math.PI*2); ctx.fill();
+                            ctx.fillStyle = treeAccentColor; ctx.beginPath(); ctx.arc(t.x, t.y - t.radius*0.7, t.radius*0.65, 0, Math.PI*2); ctx.fill();
                         } else if (variant === 2) {
                             ctx.beginPath(); ctx.moveTo(t.x-6, t.y - t.radius*1.6); ctx.lineTo(t.x + t.radius*0.6, t.y + t.radius*0.4); ctx.lineTo(t.x - t.radius*0.6, t.y + t.radius*0.4); ctx.fill();
-                            ctx.fillStyle = currentTheme.name === "Snow" ? "#fff" : "#388e3c"; ctx.beginPath(); ctx.moveTo(t.x-6, t.y - t.radius*1.6); ctx.lineTo(t.x + t.radius*0.4, t.y + t.radius*0.05); ctx.lineTo(t.x - t.radius*0.4, t.y + t.radius*0.05); ctx.fill();
+                            ctx.fillStyle = treeAccentColor; ctx.beginPath(); ctx.moveTo(t.x-6, t.y - t.radius*1.6); ctx.lineTo(t.x + t.radius*0.4, t.y + t.radius*0.05); ctx.lineTo(t.x - t.radius*0.4, t.y + t.radius*0.05); ctx.fill();
                         } else {
                             ctx.beginPath(); ctx.moveTo(t.x, t.y - t.radius*1.5); ctx.lineTo(t.x + t.radius, t.y + t.radius*0.5); ctx.lineTo(t.x - t.radius, t.y + t.radius*0.5); ctx.fill();
-                            ctx.fillStyle = currentTheme.name === "Snow" ? "#fff" : "#388e3c"; ctx.beginPath(); ctx.moveTo(t.x, t.y - t.radius*1.5); ctx.lineTo(t.x + t.radius*0.8, t.y + t.radius*0.1); ctx.lineTo(t.x - t.radius*0.8, t.y + t.radius*0.1); ctx.fill();
+                            ctx.fillStyle = treeAccentColor; ctx.beginPath(); ctx.moveTo(t.x, t.y - t.radius*1.5); ctx.lineTo(t.x + t.radius*0.8, t.y + t.radius*0.1); ctx.lineTo(t.x - t.radius*0.8, t.y + t.radius*0.1); ctx.fill();
                         }
                     } ctx.restore();
+                    // Magma: a flickering flame licks up from scorched trees, with the odd
+                    // ember drifting off - a small permanent reminder of where the player's
+                    // been, distinct from the ambient trail embers in updateSkinWorldEffects().
+                    if (t.onFire) {
+                        ctx.save(); ctx.translate(t.x, t.y - t.radius * 1.1);
+                        let flick = 0.7 + Math.sin(Date.now()/90 + (t.seed||0)*10) * 0.3;
+                        let fg = ctx.createRadialGradient(0, 0, 0, 0, 0, t.radius * 0.6);
+                        fg.addColorStop(0, `rgba(255, 220, 120, ${0.9*flick})`); fg.addColorStop(0.5, `rgba(255, 110, 20, ${0.7*flick})`); fg.addColorStop(1, 'rgba(255, 60, 0, 0)');
+                        ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(0, 0, t.radius * 0.6, 0, Math.PI*2); ctx.fill();
+                        ctx.restore();
+                        if (Math.random() < 0.12) flameParticles.push({ x: t.x + (Math.random()-0.5)*t.radius, y: t.y - t.radius, vx: (Math.random()-0.5)*0.8, vy: -0.5 - Math.random()*0.5, life: 0.8, maxLife: 0.8, size: 2 + Math.random()*3 });
+                    }
+                    // Toxic Sludge: wilted trees drip a slow, permanent ooze and sag under a
+                    // sickly green haze.
+                    else if (t.wilted) {
+                        ctx.save(); ctx.globalAlpha = 0.35 + Math.sin(Date.now()/300 + (t.seed||0)*10) * 0.1;
+                        ctx.fillStyle = '#39ff14'; ctx.beginPath(); ctx.arc(t.x, t.y - t.radius*0.6, t.radius * 0.55, 0, Math.PI*2); ctx.fill();
+                        ctx.restore();
+                        if (Math.random() < 0.05) splashes.push({ x: t.x + (Math.random()-0.5)*t.radius, y: t.y + t.radius*0.4, vx: 0, vy: 0, life: 1, maxLife: 1.1, type: 'drop', color: '#39ff14' });
+                    }
+                    // Fairy Dust: blossomed trees stay ringed with tiny permanent flowers.
+                    else if (t.blossomed) {
+                        ctx.save();
+                        for (let fi = 0; fi < 5; fi++) {
+                            let fa = (fi / 5) * Math.PI * 2 + (t.seed||0)*6;
+                            let fx = t.x + Math.cos(fa) * t.radius * 0.85, fy = t.y - t.radius*0.3 + Math.sin(fa) * t.radius * 0.5;
+                            ctx.fillStyle = fi % 2 === 0 ? '#ffb6c1' : '#fff59d';
+                            ctx.beginPath(); ctx.arc(fx, fy, 3.2, 0, Math.PI*2); ctx.fill();
+                            ctx.fillStyle = '#ffeb3b'; ctx.beginPath(); ctx.arc(fx, fy, 1.2, 0, Math.PI*2); ctx.fill();
+                        }
+                        ctx.restore();
+                    }
                 } 
                 else if (item.type === 'rock') {
-                    let r = item.obj; let variant = r.variant || 0;
+                    let r = item.obj;
+                    // Glitch: every rock renders as a garish pop-up ad box instead of its
+                    // normal art, all the time.
+                    if (player.color === 'glitch') { drawPopupAdBox(r.x, r.y, r.radius); return; }
+                    let variant = r.variant || 0;
                     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(r.x, r.y + r.radius*0.18, r.radius*1.05, r.radius*0.4, 0, 0, Math.PI*2); ctx.fill();
-                    ctx.fillStyle = currentTheme.rock;
+                    if (r.golden) {
+                        let rockGoldGrad = ctx.createLinearGradient(r.x - r.radius, r.y - r.radius, r.x + r.radius, r.y + r.radius);
+                        rockGoldGrad.addColorStop(0, '#fff7c2'); rockGoldGrad.addColorStop(0.5, '#ffcc00'); rockGoldGrad.addColorStop(1, '#8a5a00');
+                        ctx.fillStyle = rockGoldGrad;
+                    } else { ctx.fillStyle = currentTheme.rock; }
                     if (variant === 1) {
                         ctx.beginPath(); let pts = 7;
                         for (let i=0;i<=pts;i++) { let a = Math.PI + (i/pts)*Math.PI; let rad = r.radius * (0.8 + 0.25*Math.sin(i*2.4 + r.x*0.01)); let px = r.x + Math.cos(a)*rad, py = r.y + Math.sin(a)*rad*0.9; if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py); } 
@@ -3499,7 +3973,28 @@
                     let c = item.obj;
                     if (!c.collected) { ctx.save(); ctx.globalAlpha = 0.15 + 0.1*Math.sin(Date.now()/400); ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, c.radius*1.8, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
                     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(c.x, c.y + c.radius, c.radius, c.radius*0.5, 0, 0, Math.PI*2); ctx.fill();
-                    if (!c.collected) {
+                    if (player.color === 'rainbow' && !c.collected) {
+                        // Rainbow skin: the chest becomes a pot of gold with a little rainbow
+                        // arcing right down onto it.
+                        const potBands = ['#ff3b3b', '#ff9f1c', '#ffe135', '#4caf50', '#3399ff', '#8e44ad'];
+                        ctx.save(); ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.globalAlpha = 0.85;
+                        for (let bi = 0; bi < potBands.length; bi++) {
+                            ctx.strokeStyle = potBands[bi];
+                            ctx.beginPath(); ctx.arc(c.x, c.y + c.radius*0.3, c.radius*2.6 - bi*5, Math.PI*1.15, Math.PI*1.85); ctx.stroke();
+                        }
+                        ctx.restore();
+                        ctx.fillStyle = '#1a1a1a'; ctx.beginPath();
+                        ctx.ellipse(c.x, c.y - c.radius*0.2, c.radius*0.95, c.radius*0.6, 0, Math.PI, 0, false);
+                        ctx.lineTo(c.x + c.radius*0.75, c.y + c.radius*0.55);
+                        ctx.quadraticCurveTo(c.x, c.y + c.radius*0.85, c.x - c.radius*0.75, c.y + c.radius*0.55);
+                        ctx.closePath(); ctx.fill();
+                        ctx.fillStyle = '#3a3a3a'; ctx.beginPath(); ctx.ellipse(c.x, c.y - c.radius*0.2, c.radius*0.95, c.radius*0.35, 0, 0, Math.PI*2); ctx.fill();
+                        ctx.fillStyle = '#ffd700';
+                        for (let gi = 0; gi < 5; gi++) {
+                            let ga = (gi/5) * Math.PI * 2;
+                            ctx.beginPath(); ctx.arc(c.x + Math.cos(ga)*c.radius*0.45, c.y - c.radius*0.25 + Math.sin(ga)*c.radius*0.2, 4, 0, Math.PI*2); ctx.fill();
+                        }
+                    } else if (!c.collected) {
                         ctx.fillStyle = '#8b4513'; ctx.beginPath(); ctx.roundRect(c.x - c.radius, c.y - c.radius*0.5, c.radius*2, c.radius*1.5, 5); ctx.fill();
                         ctx.fillStyle = '#d4a017'; ctx.fillRect(c.x - c.radius, c.y, c.radius*2, 5);
                         ctx.fillStyle = '#ffcf33'; ctx.beginPath(); ctx.arc(c.x, c.y + 2, 4, 0, Math.PI*2); ctx.fill();
@@ -3690,6 +4185,9 @@
             projectiles = []; icicles = []; flameParticles = [];
             splashes = []; leaves = []; screenShake = 0; hives = [];
             runItems = {}; companions = []; playerTrail = []; shurikenSpin = 0;
+            iceFrostedTiles.clear();
+            lavaScorchedTiles.clear(); toxicSludgeTiles.clear(); fairyBloomTiles.clear();
+            shootingStars = []; shootingStarTimer = 0;
             updateItemsHUD();
             document.getElementById('hazard-warning').style.display = 'none';
             lastCountdownSecond = -1;
