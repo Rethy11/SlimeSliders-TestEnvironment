@@ -377,6 +377,11 @@
             set: (key, val) => { memoryStorage[key] = val; try { localStorage.setItem(key, val); } catch(e) {} }
         };
 
+        // DEV BUILD: The Void skin comes pre-unlocked for testing - remove this block for a
+        // normal release build. Only sets it if the player doesn't already own it, so it
+        // won't stomp a real save that's already unlocked (or bought extra copies of) Void.
+        if (parseInt(storage.get('inv_void') || 0) < 1) storage.set('inv_void', 1);
+
         // Cached DOM references for the HUD, so the hot game loop never has to call
         // getElementById repeatedly (that lookup + the layout writes below it were a major
         // source of frame hitches, especially while a powerup was active).
@@ -640,6 +645,11 @@
         // regular sky gradient so switching skins doesn't need to rebuild either one.
         let voidSkyGradientCache = null;
         let voidSkyGradientCacheH = -1;
+        // Galaxy skin: deep-space gradient (near-black through nebula purple/magenta) behind
+        // the starfield/nebula clouds/shooting stars, replacing the normal daytime blue -
+        // cached the same way as the void/regular sky gradients above.
+        let galaxySkyGradientCache = null;
+        let galaxySkyGradientCacheH = -1;
         let sunGradientCache = null;
 
         let gameState = 'title';
@@ -857,7 +867,7 @@
             { id: "galaxy", name: "Galaxy", preview: "radial-gradient(circle, #7597de, #2b1055)", isAnimated: true },
             { id: "ice", name: "Glacier", preview: "linear-gradient(135deg, #a5f2f3, #ffffff)", isAnimated: true },
             { id: "toxic", name: "Toxic Sludge", preview: "radial-gradient(circle, #39ff14, #003300)", isAnimated: true },
-            { id: "void", name: "The Void", preview: "#050505", isAnimated: true },
+            { id: "void", name: "The Void", preview: "radial-gradient(circle, #8a0f1a, #0a0a0a)", isAnimated: true },
             { id: "sparkle", name: "Fairy Dust", preview: "#ffb6c1", isAnimated: true },
             { id: "glitch", name: "Glitch", preview: "linear-gradient(90deg, #0ff, #f0f)", isAnimated: true },
             { id: "neon", name: "Neon Pulse", preview: "linear-gradient(45deg, #ff00ff, #00ffff)", isAnimated: true }
@@ -1150,6 +1160,22 @@
         function normalizeAngle(a) { 
             while (a > Math.PI) a -= Math.PI*2; 
             while (a < -Math.PI) a += Math.PI*2; return a; 
+        }
+        // Small cubic-bezier helpers - used by the Void skin's tentacle trees to place suction
+        // ridges and the tip eye at exact points/orientations along the curve without having
+        // to hand-track segment geometry.
+        function cubicPoint(x0, y0, x1, y1, x2, y2, x3, y3, t) {
+            let mt = 1 - t;
+            return {
+                x: mt*mt*mt*x0 + 3*mt*mt*t*x1 + 3*mt*t*t*x2 + t*t*t*x3,
+                y: mt*mt*mt*y0 + 3*mt*mt*t*y1 + 3*mt*t*t*y2 + t*t*t*y3
+            };
+        }
+        function cubicTangentAngle(x0, y0, x1, y1, x2, y2, x3, y3, t) {
+            let mt = 1 - t;
+            let dx = 3*mt*mt*(x1-x0) + 6*mt*t*(x2-x1) + 3*t*t*(x3-x2);
+            let dy = 3*mt*mt*(y1-y0) + 6*mt*t*(y2-y1) + 3*t*t*(y3-y2);
+            return Math.atan2(dy, dx);
         }
         function distToSegment(px, py, ax, ay, bx, by) {
             let dx = bx - ax, dy = by - ay, lenSq = dx*dx + dy*dy;
@@ -1870,16 +1896,17 @@
             document.getElementById('tab-skins').addEventListener('click', () => switchShopTab('skins'));
             document.getElementById('tab-hats').addEventListener('click', () => switchShopTab('hats'));
             document.getElementById('btn-pull').addEventListener('click', pullGacha);
-            // Removing a hat also counts toward two hidden 20-CONSECUTIVE-click toggles: the
-            // perf overlay, and the secret Corrupted Data glitch slime unlock. The streak is
-            // reset by the document-level click listener declared right below
-            // removeHatClickCount - any click on anything else breaks the streak back to 0.
+            // Removing a hat also counts toward a hidden 20-CONSECUTIVE-click streak that
+            // unlocks the secret Corrupted Data glitch slime. The streak is reset by the
+            // document-level click listener declared right below removeHatClickCount - any
+            // click on anything else breaks the streak back to 0. (The perf overlay used to
+            // piggyback on this same streak; it now toggles with equipping/unequipping
+            // Corrupted Data itself - see syncPerfOverlay.)
             document.getElementById('btn-remove-hat').addEventListener('click', () => {
                 equipItem('hat', null);
                 removeHatClickCount++;
                 if (removeHatClickCount >= 20) {
                     removeHatClickCount = 0;
-                    if (perfOverlay) perfOverlay.style.display = (perfOverlay.style.display === 'none') ? 'block' : 'none';
                     unlockSecretGlitchSkin();
                 }
             });
@@ -2346,16 +2373,16 @@
         }
 
         // Grants the secret "Corrupted Data" skin the first time 20 consecutive Remove Hat
-        // clicks are landed. Re-triggering after it's already unlocked just re-plays the toast
-        // (harmless, and confirms to a curious player that the streak still works) without
-        // stacking extra inventory count, since inv_corrupted is set to 1 rather than
-        // incremented like normal gacha pulls.
+        // clicks are landed. Re-triggering the streak after it's already unlocked is a no-op -
+        // the "GLITCH DETECTED" unlock screen is a one-time reveal, not a repeatable easter egg,
+        // so it neither replays nor stacks extra inventory count.
         function unlockSecretGlitchSkin() {
             let alreadyUnlocked = parseInt(storage.get('inv_corrupted') || 0) > 0;
+            if (alreadyUnlocked) return;
             storage.set('inv_corrupted', 1);
             playSFX('secret_unlock');
             showSecretUnlockToast();
-            if (!alreadyUnlocked) populateInventory();
+            populateInventory();
         }
 
         function showSecretUnlockToast() {
@@ -2370,6 +2397,7 @@
                 player.color = id;
                 storage.set('landSlidersSkin', id);
                 syncColorInvertEffect();
+                syncPerfOverlay();
             } else if (type === 'hat') {
                 player.hat = id;
                 if (id) storage.set('landSlidersHat', id);
@@ -2586,7 +2614,7 @@
                 let facing = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : player.facing;
                 if (Math.random() < 0.9) {
                     let a = facing + (Math.random() - 0.5) * (Math.PI / 3); let spd = 5 + Math.random() * 3;
-                    flameParticles.push({ x: player.worldX + Math.cos(facing)*player.radius*0.6, y: player.worldY + Math.sin(facing)*player.radius*0.6, vx: Math.cos(a)*spd, vy: Math.sin(a)*spd, life: 2, maxLife: 2, size: 8 + Math.random()*8 });
+                    flameParticles.push({ x: player.worldX + Math.cos(facing)*player.radius*0.6, y: player.worldY + Math.sin(facing)*player.radius*0.6, vx: Math.cos(a)*spd, vy: Math.sin(a)*spd, life: 2, maxLife: 2, size: 8 + Math.random()*8, source: 'firecone' });
                 }
                 if (Math.random() < 0.1) playSFX('fire');
             }
@@ -3030,6 +3058,16 @@
             // Glitch: the sky is replaced entirely by old-TV static - skips the gradient/sun/
             // cloud/bird layers below altogether while equipped.
             if (player.color === 'glitch') { drawTVStatic(); return; }
+            // Corrupted Data: the sky is a flat hot-pink fill - same early-return pattern as
+            // Glitch above, skipping the gradient/sun/cloud/bird layers entirely.
+            if (player.color === 'corrupted') {
+                ctx.save();
+                ctx.translate(camera.x, camera.y);
+                ctx.fillStyle = '#ff1493';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+                return;
+            }
             // PERF: both gradients below used to be rebuilt from scratch every single frame,
             // unconditionally, with camera.x/y baked directly into their coordinates. A
             // CanvasGradient's control points are evaluated against whatever transform is
@@ -3049,10 +3087,16 @@
             }
             if (!voidSkyGradientCache || voidSkyGradientCacheH !== canvas.height) {
                 voidSkyGradientCache = ctx.createLinearGradient(0, 0, 0, canvas.height);
-                voidSkyGradientCache.addColorStop(0, '#050510'); voidSkyGradientCache.addColorStop(0.55, '#1a0e2e'); voidSkyGradientCache.addColorStop(1, '#3d1f57');
+                voidSkyGradientCache.addColorStop(0, '#010001'); voidSkyGradientCache.addColorStop(0.55, '#0c0507'); voidSkyGradientCache.addColorStop(1, '#1c0e10');
                 voidSkyGradientCacheH = canvas.height;
             }
-            ctx.fillStyle = player.color === 'void' ? voidSkyGradientCache : skyGradientCache;
+            if (!galaxySkyGradientCache || galaxySkyGradientCacheH !== canvas.height) {
+                galaxySkyGradientCache = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                galaxySkyGradientCache.addColorStop(0, '#05020f'); galaxySkyGradientCache.addColorStop(0.4, '#1b0c3d');
+                galaxySkyGradientCache.addColorStop(0.7, '#3a1361'); galaxySkyGradientCache.addColorStop(1, '#6a2f8f');
+                galaxySkyGradientCacheH = canvas.height;
+            }
+            ctx.fillStyle = player.color === 'void' ? voidSkyGradientCache : (player.color === 'galaxy' ? galaxySkyGradientCache : skyGradientCache);
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // Soft sun glow, fixed in world space so it drifts past naturally as the camera moves
@@ -3069,18 +3113,24 @@
             ctx.restore();
 
             // Galaxy: a faint twinkling starfield drifts across the sky, fixed in world space
-            // like the sun glow above. Rainbow: a soft multi-band arch does the same.
-            if (player.color === 'galaxy') { drawGalaxyStars(); drawShootingStars(); }
+            // like the sun glow above, backed by soft drifting nebula clouds and a couple of
+            // distant ringed planets. Rainbow: a soft multi-band arch does the same.
+            if (player.color === 'galaxy') { drawNebulaClouds(); drawDistantPlanets(); drawGalaxyStars(); drawShootingStars(); }
             else if (player.color === 'rainbow') drawRainbowArcs();
             ctx.restore();
 
             const driftSpeed = 8;
             let drift = (Date.now() / 1000) * driftSpeed;
 
-            // Dim, slower-drifting back layer for parallax depth.
+            // Dim, slower-drifting back layer for parallax depth. Galaxy: large tumbling
+            // asteroids drift here instead of clouds.
             ctx.save();
-            ctx.fillStyle = 'rgba(255,255,255,0.45)';
-            drawCloudLayer(600, 340, drift * 0.4, 18, 16, 9.13);
+            if (player.color === 'galaxy') {
+                drawAsteroidLayer(900, 560, drift * 0.4, 32, 22, 9.13, '150,142,132', 0.5);
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.45)';
+                drawCloudLayer(600, 340, drift * 0.4, 18, 16, 9.13);
+            }
             ctx.restore();
 
             // Sparse distant birds, far enough apart that they read as ambient detail.
@@ -3090,10 +3140,15 @@
             drawBirdLayer(drift);
             ctx.restore();
 
-            // Main puffy cloud layer, closest and brightest.
+            // Main puffy cloud layer, closest and brightest. Galaxy: large tumbling asteroids
+            // drift here instead, bigger and brighter than the back layer for parallax depth.
             ctx.save();
-            ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            drawCloudLayer(420, 260, drift, 30, 26, 0);
+            if (player.color === 'galaxy') {
+                drawAsteroidLayer(760, 520, drift, 46, 34, 0, '190,180,166', 0.85);
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                drawCloudLayer(420, 260, drift, 30, 26, 0);
+            }
             ctx.restore();
         }
         // Shared by both cloud layers (drawSkyBackground). Cloud identity (seed) comes from a
@@ -3147,6 +3202,114 @@
             ctx.ellipse(cx - size * 0.65, cy + size * 0.18, size * 0.62, size * 0.4, 0, 0, Math.PI * 2);
             ctx.ellipse(cx + size * 0.65, cy + size * 0.12, size * 0.68, size * 0.42, 0, 0, Math.PI * 2);
             ctx.fill();
+        }
+
+        // Galaxy skin: large tumbling asteroids drift across the sky in place of the normal
+        // puffy clouds. Tiled the same stable-seed way as drawCloudLayer (identity comes from
+        // the integer tile index, only the final draw position depends on drift) so they glide
+        // smoothly rather than morphing, but each one also spins continuously at its own
+        // independent rate/phase derived from its seed, so a whole field of them never spins
+        // in lockstep.
+        function drawAsteroidLayer(spacingX, spacingY, drift, sizeBase, sizeVar, seedOffset, colorRGB, alpha) {
+            let iStart = Math.floor((camera.x - drift) / spacingX) - 1;
+            let iEnd = Math.ceil((camera.x + canvas.width - drift) / spacingX) + 1;
+            let jStart = Math.floor(camera.y / spacingY) - 1;
+            let jEnd = Math.ceil((camera.y + canvas.height) / spacingY) + 1;
+            for (let i = iStart; i <= iEnd; i++) {
+                for (let j = jStart; j <= jEnd; j++) {
+                    let seed = Math.abs(Math.sin(i * 12.9898 + j * 78.233 + seedOffset) * 43758.5453);
+                    seed -= Math.floor(seed);
+                    let cx = i * spacingX + seed * 140 + drift;
+                    let cy = j * spacingY + ((seed * 71) % 1) * 120;
+                    drawAsteroidPuff(cx, cy, sizeBase + seed * sizeVar, seed, colorRGB, alpha);
+                }
+            }
+        }
+        // Draws one tumbling asteroid: a lumpy, irregular rock silhouette (fixed shape per
+        // seed) with a few shaded craters, continuously rotated at a seed-derived rate/phase.
+        function drawAsteroidPuff(cx, cy, size, seed, colorRGB, alpha) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            let spinSpeed = 0.15 + seed * 0.35;
+            ctx.rotate((Date.now() / 1000) * spinSpeed + seed * 20);
+            ctx.fillStyle = `rgba(${colorRGB},${alpha})`;
+            const pts = 9;
+            ctx.beginPath();
+            for (let k = 0; k <= pts; k++) {
+                let a = (k / pts) * Math.PI * 2;
+                let wob = 0.7 + 0.3 * Math.sin(a * 3 + seed * 40) + 0.15 * Math.sin(a * 7 + seed * 13);
+                let rad = size * wob;
+                let px = Math.cos(a) * rad, py = Math.sin(a) * rad * 0.85;
+                if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = `rgba(40,36,32,${alpha * 0.55})`;
+            for (let c = 0; c < 3; c++) {
+                let ca = seed * 30 + c * 2.4;
+                let cr = size * (0.18 + ((seed * (c + 3)) % 1) * 0.12);
+                let ccx = Math.cos(ca) * size * 0.35, ccy = Math.sin(ca) * size * 0.3;
+                ctx.beginPath(); ctx.ellipse(ccx, ccy, cr, cr * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // Galaxy skin: soft, slow-drifting nebula clouds behind the starfield - tiled the same
+        // stable-seed way as the cloud layers so identity doesn't shift frame to frame, only
+        // the drift position and a gentle pulse do. Each puff is a large, very translucent
+        // radial gradient blob so overlapping puffs blend into wispy nebula color.
+        function drawNebulaClouds() {
+            const spacingX = 520, spacingY = 480;
+            let drift = (Date.now() / 1000) * 3;
+            let iStart = Math.floor((camera.x - drift) / spacingX) - 1, iEnd = Math.ceil((camera.x + canvas.width - drift) / spacingX) + 1;
+            let jStart = Math.floor(camera.y / spacingY) - 1, jEnd = Math.ceil((camera.y + canvas.height) / spacingY) + 1;
+            const palette = ['rgba(255,64,158,0.16)', 'rgba(100,120,255,0.16)', 'rgba(64,220,220,0.13)', 'rgba(180,80,255,0.16)'];
+            ctx.save();
+            for (let i = iStart; i <= iEnd; i++) {
+                for (let j = jStart; j <= jEnd; j++) {
+                    let seed = Math.abs(Math.sin(i * 17.13 + j * 55.71 + 8.6) * 33851.2); seed -= Math.floor(seed);
+                    if (seed > 0.55) continue; // keep nebula patches sparse
+                    let nx = i * spacingX + seed * 220 + drift, ny = j * spacingY + ((seed * 61) % 1) * 220;
+                    let size = 160 + seed * 180;
+                    let pulse = 0.85 + 0.15 * Math.sin(Date.now() / 2400 + seed * 30);
+                    let grad = ctx.createRadialGradient(nx, ny, 0, nx, ny, size * pulse);
+                    let col = palette[Math.floor(seed * palette.length) % palette.length];
+                    grad.addColorStop(0, col); grad.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(nx, ny, size * pulse, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            ctx.restore();
+        }
+
+        // Galaxy skin: a couple of distant ringed/cratered planets, fixed in world space like
+        // the sun glow, drifting past very slowly for a sense of scale behind the starfield.
+        function drawDistantPlanets() {
+            const spacingX = 2200, spacingY = 1900;
+            let drift = (Date.now() / 1000) * 1.2;
+            let iStart = Math.floor((camera.x - drift) / spacingX) - 1, iEnd = Math.ceil((camera.x + canvas.width - drift) / spacingX) + 1;
+            let jStart = Math.floor(camera.y / spacingY) - 1, jEnd = Math.ceil((camera.y + canvas.height) / spacingY) + 1;
+            ctx.save();
+            for (let i = iStart; i <= iEnd; i++) {
+                for (let j = jStart; j <= jEnd; j++) {
+                    let seed = Math.abs(Math.sin(i * 63.7 + j * 11.3 + 3.2) * 19483.7); seed -= Math.floor(seed);
+                    if (seed > 0.35) continue; // one planet per several tiles, at most
+                    let px = i * spacingX + seed * 500 + drift, py = j * spacingY + ((seed * 37) % 1) * 500;
+                    let pr = 26 + seed * 34;
+                    let ringed = seed > 0.18;
+                    let bodyColor = seed > 0.27 ? '#e08a4b' : (seed > 0.09 ? '#7a5cff' : '#4fb8b0');
+                    if (ringed) {
+                        ctx.save(); ctx.translate(px, py); ctx.rotate(-0.35);
+                        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = pr * 0.16;
+                        ctx.beginPath(); ctx.ellipse(0, 0, pr * 1.7, pr * 0.42, 0, 0, Math.PI * 2); ctx.stroke();
+                        ctx.restore();
+                    }
+                    let bodyGrad = ctx.createRadialGradient(px - pr * 0.3, py - pr * 0.3, pr * 0.1, px, py, pr);
+                    bodyGrad.addColorStop(0, '#fff'); bodyGrad.addColorStop(0.15, bodyColor); bodyGrad.addColorStop(1, 'rgba(10,5,20,0.9)');
+                    ctx.fillStyle = bodyGrad;
+                    ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            ctx.restore();
         }
 
         // Galaxy skin: sparse twinkling stars tiled the same way as the cloud/bird layers above
@@ -3229,6 +3392,83 @@
             ctx.restore();
         }
 
+        // Galaxy: hazard pockets are miniature black holes - a near-black core, a rotating
+        // multi-band accretion disk (orange/violet), a scatter of particles spiraling inward
+        // on a repeating cycle, and a bright thin event-horizon ring. Purely a function of
+        // time/position like drawMatrixRain, so it never needs any persistent state and reads
+        // consistently within whatever clip is already active (see drawHazardHoles).
+        // PERF: the 3 band gradients + 1 core gradient below depend only on `span` (which is
+        // always HEX_SIZE - every hazard hole is the same size) and the fixed per-band hue, not
+        // on tile position - they're identical for every hazard tile, every frame. This used to
+        // call createLinearGradient/createRadialGradient (4 allocations, each with 2-3
+        // addColorStop calls) once per tile per frame; on a level with several hazard holes in
+        // view under the Galaxy skin, the perf report's single ~6.7s frame lines up with exactly
+        // this kind of per-frame allocation churn. Built once here in *local* (post-translate)
+        // coordinates and cached - same pattern as flameGradientCache elsewhere in this file.
+        // (Building them in local space also fixes a pre-existing bug: the old code created the
+        // band gradients using world cx/cy *before* translating into the tile's local frame, so
+        // the gradient's positioning never actually matched the ellipse it was painted on.)
+        let blackHoleGradCache = null;
+        function getBlackHoleGradients(span) {
+            if (blackHoleGradCache && blackHoleGradCache.span === span) return blackHoleGradCache;
+            let bands = [];
+            for (let i = 0; i < 3; i++) {
+                let bandR = span * (0.5 + i * 0.16);
+                let bandGrad = ctx.createLinearGradient(-bandR, 0, bandR, 0);
+                let hue = i % 2 === 0 ? 'rgba(255,138,61,' : 'rgba(157,78,221,';
+                bandGrad.addColorStop(0, hue + '0)'); bandGrad.addColorStop(0.5, hue + '0.6)'); bandGrad.addColorStop(1, hue + '0)');
+                bands.push(bandGrad);
+            }
+            let coreR = span * 0.34;
+            let coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coreR);
+            coreGrad.addColorStop(0, '#000000'); coreGrad.addColorStop(0.75, '#050208'); coreGrad.addColorStop(1, 'rgba(5,2,8,0)');
+            blackHoleGradCache = { span, bands, coreGrad };
+            return blackHoleGradCache;
+        }
+
+        function drawBlackHoleSwirl(cx, cy, span) {
+            ctx.save();
+            let t = Date.now() / 1000;
+            let coreR = span * 0.34;
+            let grads = getBlackHoleGradients(span);
+
+            // Rotating accretion disk bands, drawn as thick partial-ellipse strokes so they
+            // read as matter smeared around the core rather than solid rings.
+            for (let i = 0; i < 3; i++) {
+                let ang = t * (1.1 + i * 0.35) + i * 2.4;
+                let bandR = span * (0.5 + i * 0.16);
+                ctx.strokeStyle = grads.bands[i]; ctx.lineWidth = 3 - i * 0.5;
+                ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+                ctx.beginPath(); ctx.ellipse(0, 0, bandR, bandR * 0.32, 0, 0, Math.PI * 1.4); ctx.stroke();
+                ctx.restore();
+            }
+
+            // Particles spiraling inward on a repeating cycle (golden-ratio spacing keeps
+            // them from clumping), fading in from the rim and vanishing at the core.
+            ctx.fillStyle = '#fff';
+            for (let p = 0; p < 9; p++) {
+                let seed = (p * 0.618034) % 1;
+                let cycle = (t * 0.5 + seed) % 1;
+                let rad = span * (1 - cycle) * 0.95;
+                let ang2 = seed * Math.PI * 2 + cycle * Math.PI * 7;
+                let px = cx + Math.cos(ang2) * rad, py = cy + Math.sin(ang2) * rad * 0.55;
+                ctx.globalAlpha = Math.min(1, cycle * 2) * (1 - cycle * 0.3);
+                ctx.beginPath(); ctx.arc(px, py, 1.3, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Near-black core with a soft inner falloff, then a crisp bright event-horizon
+            // ring right at its edge.
+            ctx.save(); ctx.translate(cx, cy);
+            ctx.fillStyle = grads.coreGrad;
+            ctx.beginPath(); ctx.arc(0, 0, coreR, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(0, 0, coreR, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+
+            ctx.restore();
+        }
+
         // Glitch: every tree renders as this "broken image" placeholder instead of its usual
         // art - a bright pink box with a torn corner and the classic broken-picture glyph.
         function drawMissingImageBox(x, y, radius) {
@@ -3278,6 +3518,403 @@
             ctx.restore();
         }
 
+        // Glitch: every coin/gem renders as a spinning rainbow "wheel of death" (the classic
+        // OS beachball/busy-spinner) instead of its usual loot-sprite art, all the time.
+        function drawRainbowWheelOfDeath(x, y, radius) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x, y + radius*0.6, radius*0.8, radius*0.32, 0, 0, Math.PI*2); ctx.fill();
+            let segs = 8;
+            let spin = (Date.now() / 220) % (Math.PI * 2);
+            ctx.translate(x, y); ctx.rotate(spin);
+            for (let i = 0; i < segs; i++) {
+                let a0 = (i / segs) * Math.PI * 2, a1 = ((i + 1) / segs) * Math.PI * 2;
+                ctx.fillStyle = `hsl(${Math.round((i / segs) * 360)}, 90%, 55%)`;
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, radius, a0, a1); ctx.closePath(); ctx.fill();
+            }
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI*2); ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, radius * 0.2, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+        }
+
+        // Glitch: every fence renders as a blazing brick "firewall" instead of the usual
+        // post-and-rail art - hazard stripes along the top, flame licks, and a warning label
+        // on segments long enough to fit one (playing on both senses of "firewall").
+        function drawFirewallSegment(f) {
+            let angle = Math.atan2(f.y2 - f.y1, f.x2 - f.x1);
+            let len = Math.hypot(f.x2 - f.x1, f.y2 - f.y1);
+            ctx.save(); ctx.translate(f.midX, f.midY); ctx.rotate(angle);
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(-len/2, 8, len, 5);
+            // Brick wall body
+            let brickGrad = ctx.createLinearGradient(0, -16, 0, 10);
+            brickGrad.addColorStop(0, '#7a2a12'); brickGrad.addColorStop(1, '#3d1408');
+            ctx.fillStyle = brickGrad; ctx.fillRect(-len/2, -16, len, 26);
+            // Hazard stripes along the top edge
+            ctx.save(); ctx.beginPath(); ctx.rect(-len/2, -16, len, 6); ctx.clip();
+            for (let sx = -len/2 - 10; sx < len/2 + 10; sx += 12) {
+                ctx.fillStyle = (Math.floor((sx + len/2) / 12) % 2 === 0) ? '#ffcc00' : '#1a1a1a';
+                ctx.beginPath(); ctx.moveTo(sx, -16); ctx.lineTo(sx + 6, -16); ctx.lineTo(sx - 4, 10); ctx.lineTo(sx - 10, 10); ctx.closePath(); ctx.fill();
+            }
+            ctx.restore();
+            // Flame licks along the top edge
+            let t = Date.now() / 150;
+            for (let fx = -len/2 + 6; fx < len/2 - 4; fx += 10) {
+                let flick = Math.sin(t + fx) * 3;
+                let fh = 10 + Math.abs(Math.sin(t * 1.3 + fx * 0.7)) * 8;
+                let flameGrad = ctx.createLinearGradient(fx, -16, fx, -16 - fh);
+                flameGrad.addColorStop(0, '#ff7a00'); flameGrad.addColorStop(0.6, '#ffcf33'); flameGrad.addColorStop(1, 'rgba(255,240,150,0)');
+                ctx.fillStyle = flameGrad;
+                ctx.beginPath(); ctx.moveTo(fx - 3, -16); ctx.quadraticCurveTo(fx + flick, -16 - fh*0.6, fx, -16 - fh); ctx.quadraticCurveTo(fx - flick, -16 - fh*0.6, fx + 3, -16); ctx.closePath(); ctx.fill();
+            }
+            // Mortar lines and outline
+            ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+            for (let by = -12; by < 10; by += 7) { ctx.beginPath(); ctx.moveTo(-len/2, by); ctx.lineTo(len/2, by); ctx.stroke(); }
+            ctx.strokeStyle = '#ff4500'; ctx.lineWidth = 2; ctx.strokeRect(-len/2, -16, len, 26);
+            if (len > 46) { ctx.fillStyle = '#ffcf33'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('FIREWALL', 0, -2); }
+            ctx.restore();
+        }
+
+        // Glitch: every grass/flower/leaf speck (normally a 3-8px dot/blade/curl) renders at
+        // roughly 4x that size as a small annoying pop-up glyph instead - a mini ad window
+        // with titlebar dots and fake body text, a mini gradient-filled warning-triangle
+        // alert, or a mini chat/notification bubble with an unread badge, cycled by speck
+        // type (d.type 0/1/2, same as the normal-skin foliage variants).
+        function drawGlitchPopupDecor(d, breezeX) {
+            if (d.type === 0) {
+                let w = 32, h = 26;
+                ctx.save(); ctx.translate(d.x, d.y - 6);
+                ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(-w/2 + 2, -h/2 + 3, w, h);
+                ctx.fillStyle = '#f4f6fb'; ctx.fillRect(-w/2, -h/2, w, h);
+                ctx.fillStyle = d.color; ctx.fillRect(-w/2, -h/2, w, h * 0.3);
+                ctx.fillStyle = 'rgba(0,0,0,0.35)';
+                for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(-w/2 + 5 + i * 6, -h/2 + h*0.15, 1.5, 0, Math.PI*2); ctx.fill(); }
+                ctx.fillStyle = 'rgba(0,0,0,0.25)';
+                ctx.fillRect(-w/2 + 3, -h*0.05, w * 0.6, 3);
+                ctx.fillRect(-w/2 + 3, h*0.12, w * 0.4, 3);
+                ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(w/2 - 5, -h/2 + 5, 4, 0, Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(w/2 - 7, -h/2 + 3); ctx.lineTo(w/2 - 3, -h/2 + 7);
+                ctx.moveTo(w/2 - 3, -h/2 + 3); ctx.lineTo(w/2 - 7, -h/2 + 7); ctx.stroke();
+                ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(-w/2, -h/2, w, h);
+                ctx.restore();
+            } else if (d.type === 1) {
+                let size = 30, bx = breezeX * 6;
+                ctx.save(); ctx.translate(d.x + bx, d.y);
+                ctx.fillStyle = 'rgba(0,0,0,0.25)';
+                ctx.beginPath(); ctx.moveTo(2, -size + 3); ctx.lineTo(-size*0.42 + 2, 3); ctx.lineTo(size*0.42 + 2, 3); ctx.closePath(); ctx.fill();
+                let grad = ctx.createLinearGradient(0, -size, 0, 0);
+                grad.addColorStop(0, '#ffe066'); grad.addColorStop(1, d.color);
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.moveTo(0, -size); ctx.lineTo(-size*0.42, 0); ctx.lineTo(size*0.42, 0); ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = '#3d2b00'; ctx.lineWidth = 2; ctx.stroke();
+                ctx.fillStyle = '#1a1200'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('!', 0, -size*0.36);
+                ctx.restore();
+            } else {
+                let w = 26, h = 16, bx = breezeX * 10;
+                ctx.save(); ctx.translate(d.x + bx, d.y - 10);
+                ctx.fillStyle = 'rgba(0,0,0,0.22)';
+                ctx.beginPath(); ctx.roundRect(-w/2 + 1, -h/2 + 2, w, h, 5); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 5); ctx.fill();
+                ctx.strokeStyle = d.color; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 5); ctx.stroke();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(-4, h/2 - 1); ctx.lineTo(-8, h/2 + 5); ctx.lineTo(0, h/2 - 1); ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = d.color; ctx.beginPath(); ctx.moveTo(-4, h/2 - 1); ctx.lineTo(-8, h/2 + 5); ctx.stroke();
+                ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1.6;
+                ctx.beginPath(); ctx.moveTo(-w/2 + 4, -1); ctx.lineTo(w/2 - 4, -1); ctx.stroke();
+                ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(w/2 - 2, -h/2 - 1, 4, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 6px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('1', w/2 - 2, -h/2 - 1);
+                ctx.restore();
+            }
+        }
+
+        // Void: every grass/flower/leaf speck renders as either a tiny drifting mote of dust
+        // (mostly white or grey, ignoring the speck's usual theme color) or, rarely, a larger
+        // blinking eye watching from the ground. Which one a given speck is comes from a
+        // stable hash of its fixed world position, so the same specks are always eyes every
+        // frame rather than flickering between the two. The dust motes are left under the
+        // map's grayscale filter (their colors are already grayscale, so it doesn't matter);
+        // the eyes save/restore their own filter so they stay in full color, same trick as
+        // drawFleshRock.
+        function drawVoidDecor(d, breezeX) {
+            let seed = Math.abs(Math.sin(d.x * 12.9898 + d.y * 78.233) * 43758.5453); seed -= Math.floor(seed);
+            if (seed > 0.92) {
+                ctx.save();
+                ctx.filter = 'none';
+                let er = 6 + seed * 3; // noticeably larger than the standard 3px decor dot
+                let blinkPhase = (Date.now() / 1000 + seed * 12) % (3 + seed * 2);
+                let isBlinking = blinkPhase > (2.7 + seed * 1.6);
+                ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.beginPath(); ctx.ellipse(d.x, d.y + er * 0.25, er * 0.95, er * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+                if (isBlinking) {
+                    ctx.strokeStyle = '#b89494'; ctx.lineWidth = 1.6;
+                    ctx.beginPath(); ctx.moveTo(d.x - er * 0.75, d.y); ctx.lineTo(d.x + er * 0.75, d.y); ctx.stroke();
+                } else {
+                    ctx.fillStyle = '#eee2dd'; ctx.beginPath(); ctx.ellipse(d.x, d.y, er * 0.75, er * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+                    let pupilDrift = Math.sin(d.x * 0.7 + d.y * 0.3) * er * 0.12;
+                    ctx.fillStyle = '#7a0f14'; ctx.beginPath(); ctx.arc(d.x + pupilDrift, d.y, er * 0.28, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = '#1a0505'; ctx.beginPath(); ctx.arc(d.x + pupilDrift, d.y, er * 0.13, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(d.x + pupilDrift - er * 0.1, d.y - er * 0.12, er * 0.08, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.restore();
+            } else {
+                ctx.fillStyle = seed > 0.5 ? 'rgba(225,225,225,0.7)' : 'rgba(130,130,130,0.65)';
+                ctx.beginPath(); ctx.arc(d.x, d.y, 1.4 + seed * 1.3, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        // Corrupted Data (secret skin): strips enemies, trees, rocks, and both enemy and
+        // player projectiles down to their raw collision circles instead of their usual art -
+        // a faint translucent fill, a stroked outline, a small center crosshair, and a short
+        // type label, the way a debug hitbox overlay would render them. Color is the only
+        // thing that distinguishes what kind of hitbox it is: red for anything that can hurt
+        // the player (enemies, enemy projectiles), green for static obstacle collision
+        // (trees/rocks/fences), cyan for the player's own attacks (projectiles, fire breath,
+        // lightning, shuriken), gold for collectible pickups (coins/gems).
+        function drawHitboxCircle(x, y, radius, color, label) {
+            ctx.save();
+            ctx.globalAlpha = 0.18; ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x - radius * 0.35, y); ctx.lineTo(x + radius * 0.35, y);
+            ctx.moveTo(x, y - radius * 0.35); ctx.lineTo(x, y + radius * 0.35);
+            ctx.stroke();
+            if (label) {
+                ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color;
+                ctx.fillText(label, x, y - radius - 8);
+            }
+            ctx.restore();
+        }
+
+        // Corrupted Data: same debug-hitbox treatment as drawHitboxCircle above, but for
+        // segment-shaped collision - fences (static, solid line obstacles) and the lightning
+        // power-up's beam (a thin capsule of hurt-radius `thickness` running player->target).
+        function drawHitboxLine(x1, y1, x2, y2, thickness, color, label) {
+            ctx.save();
+            let midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+            let angle = Math.atan2(y2 - y1, x2 - x1);
+            let len = Math.hypot(x2 - x1, y2 - y1);
+            ctx.translate(midX, midY); ctx.rotate(angle);
+            ctx.globalAlpha = 0.18; ctx.fillStyle = color;
+            ctx.fillRect(-len / 2, -thickness / 2, len, thickness);
+            ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 2;
+            ctx.strokeRect(-len / 2, -thickness / 2, len, thickness);
+            ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.lineTo(len / 2, 0); ctx.stroke();
+            if (label) {
+                ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color;
+                ctx.fillText(label, 0, -thickness / 2 - 8);
+            }
+            ctx.restore();
+        }
+
+        // Corrupted Data: same debug-hitbox treatment, but for the fire breath power-up's cone
+        // hit-check (a pie slice of `radius` centered on `facing`, spanning +/- `halfAngle`).
+        function drawHitboxCone(x, y, radius, facing, halfAngle, color, label) {
+            ctx.save();
+            ctx.globalAlpha = 0.18; ctx.fillStyle = color;
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, radius, facing - halfAngle, facing + halfAngle); ctx.closePath(); ctx.fill();
+            ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, radius, facing - halfAngle, facing + halfAngle); ctx.closePath(); ctx.stroke();
+            if (label) {
+                ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color;
+                ctx.fillText(label, x + Math.cos(facing) * radius * 0.5, y + Math.sin(facing) * radius * 0.5 - 8);
+            }
+            ctx.restore();
+        }
+
+        // Galaxy: every rock renders as a cratered chunk of moon rock instead of its usual
+        // theme art - pale lunar grey with a handful of shaded craters, a soft rim highlight
+        // on each, and an occasional glinting mineral fleck.
+        function drawMoonRock(x, y, radius) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(x, y + radius * 0.18, radius * 1.05, radius * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+            let baseGrad = ctx.createLinearGradient(x - radius, y - radius, x + radius, y + radius);
+            baseGrad.addColorStop(0, '#e2ded6'); baseGrad.addColorStop(0.5, '#aca69c'); baseGrad.addColorStop(1, '#6d675e');
+            ctx.fillStyle = baseGrad;
+            ctx.beginPath(); ctx.arc(x, y, radius, Math.PI, 0, false);
+            ctx.lineTo(x + radius * 0.9, y + radius * 0.18);
+            ctx.quadraticCurveTo(x, y + radius * 0.35, x - radius * 0.9, y + radius * 0.18);
+            ctx.closePath(); ctx.fill();
+            // A few fixed-relative craters (stable per-rock since they're expressed purely as
+            // fractions of x/y/radius, not random each frame).
+            const craters = [[-0.32, -0.28, 0.22], [0.26, -0.12, 0.15], [0.02, 0.12, 0.13], [-0.08, -0.5, 0.09]];
+            ctx.fillStyle = 'rgba(68,64,58,0.55)';
+            for (let i = 0; i < craters.length; i++) {
+                let cr = craters[i];
+                ctx.beginPath(); ctx.ellipse(x + cr[0] * radius, y + cr[1] * radius, radius * cr[2], radius * cr[2] * 0.72, 0, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+            for (let i = 0; i < craters.length; i++) {
+                let cr = craters[i];
+                ctx.beginPath(); ctx.ellipse(x + cr[0] * radius, y + cr[1] * radius - radius * cr[2] * 0.15, radius * cr[2], radius * cr[2] * 0.72, 0, Math.PI, Math.PI * 2); ctx.stroke();
+            }
+            // Rare glinting mineral fleck, timed off position so it isn't perfectly synced
+            // across every rock on screen.
+            if (Math.sin(Date.now() / 500 + x * 0.05) > 0.9) {
+                ctx.fillStyle = 'rgba(190,225,255,0.9)';
+                ctx.beginPath(); ctx.arc(x + radius * 0.3, y - radius * 0.35, 1.6, 0, Math.PI * 2); ctx.fill();
+            }
+            ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(x - radius * 0.3, y - radius * 0.75); ctx.lineTo(x + radius * 0.15, y - radius * 0.55); ctx.stroke();
+            ctx.restore();
+        }
+
+        // Void: every rock renders as a pulsing, oozing mass of red flesh instead of its
+        // usual theme art - the one thing besides the blinking decor eyes that stays in full
+        // color while the rest of the map desaturates, so it saves/restores its own filter
+        // rather than relying on the grayscale toggle set once at the top of draw().
+        function drawFleshRock(x, y, radius) {
+            ctx.save();
+            ctx.filter = 'none';
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x, y + radius * 0.18, radius * 1.05, radius * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+            let t = Date.now();
+            let pulse = 0.5 + 0.5 * Math.sin(t / 900 + x * 0.01);
+            let grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.35, radius * 0.1, x, y, radius * 1.1);
+            grad.addColorStop(0, `rgba(255,100,95,${0.9 + 0.1 * pulse})`); grad.addColorStop(0.45, '#a5121f'); grad.addColorStop(1, '#43060c');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(x, y, radius, Math.PI, 0, false);
+            ctx.lineTo(x + radius * 0.9, y + radius * 0.18);
+            ctx.quadraticCurveTo(x, y + radius * 0.35, x - radius * 0.9, y + radius * 0.18);
+            ctx.closePath(); ctx.fill();
+            // Dark, thread-like veins across the surface.
+            ctx.strokeStyle = 'rgba(25,0,4,0.55)'; ctx.lineWidth = 1.5;
+            const veins = [[-0.3, -0.2, 0.2, -0.5], [0.1, 0.05, 0.35, -0.4], [-0.1, 0.15, -0.4, 0.3]];
+            for (let i = 0; i < veins.length; i++) {
+                let v = veins[i];
+                ctx.beginPath(); ctx.moveTo(x + v[0] * radius, y + v[1] * radius);
+                ctx.quadraticCurveTo(x + (v[0] + v[2]) * 0.5 * radius, y + (v[1] + v[3]) * 0.5 * radius - radius * 0.1, x + v[2] * radius, y + v[3] * radius);
+                ctx.stroke();
+            }
+            // Wet, glistening highlight.
+            ctx.fillStyle = `rgba(255,205,200,${0.3 + 0.2 * pulse})`;
+            ctx.beginPath(); ctx.ellipse(x - radius * 0.35, y - radius * 0.4, radius * 0.22, radius * 0.12, -0.4, 0, Math.PI * 2); ctx.fill();
+            // A slow drip of ooze forming and stretching down one side.
+            let dripLen = radius * (0.25 + 0.3 * pulse);
+            ctx.fillStyle = '#7a0d16';
+            ctx.beginPath();
+            ctx.moveTo(x + radius * 0.5 - radius * 0.05, y + radius * 0.1);
+            ctx.lineTo(x + radius * 0.5 + radius * 0.05, y + radius * 0.1);
+            ctx.quadraticCurveTo(x + radius * 0.58, y + radius * 0.1 + dripLen * 0.6, x + radius * 0.5, y + radius * 0.1 + dripLen);
+            ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.arc(x + radius * 0.5, y + radius * 0.1 + dripLen, radius * 0.07, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
+
+        // Galaxy: every tree renders as a bioluminescent alien plant instead of its usual
+        // foliage - a dark stalk rising from a mound of alien soil, a cluster of curling
+        // tendrils tipped with pulsing glow-pods, and a larger glowing bud at the top. Sways
+        // gently the same way trees do, keyed off the tree's own seed so neighboring plants
+        // don't pulse in lockstep.
+        function drawAlienPlant(x, y, radius, seed) {
+            ctx.save();
+            let t = Date.now();
+            let sway = Math.sin(t / 1400 + seed) * 0.08;
+            ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x, y + radius * 0.5, radius * 0.85, radius * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#241537'; ctx.beginPath(); ctx.ellipse(x, y + radius * 0.25, radius * 0.55, radius * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#3d2461'; ctx.lineWidth = radius * 0.22; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(x, y + radius * 0.15); ctx.quadraticCurveTo(x + sway * radius * 2, y - radius * 0.6, x + sway * radius * 3, y - radius * 1.3); ctx.stroke();
+            const tendrilCount = 3;
+            for (let i = 0; i < tendrilCount; i++) {
+                let a = (i / tendrilCount) * Math.PI * 2 + seed * 3;
+                let tx = x + Math.cos(a) * radius * 0.5, ty = y + radius * 0.05 + Math.sin(a) * radius * 0.15;
+                let tipX = tx + Math.cos(a + sway * 2) * radius * 0.9, tipY = ty - radius * 0.9 + Math.sin(a) * radius * 0.2;
+                ctx.strokeStyle = '#4a2f73'; ctx.lineWidth = radius * 0.1;
+                ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo(tx + Math.cos(a) * radius * 0.4, ty - radius * 0.5, tipX, tipY); ctx.stroke();
+                let glow = 0.6 + 0.4 * Math.sin(t / 300 + i * 2 + seed * 5);
+                let pulseR = radius * 0.16 * (0.85 + 0.15 * glow);
+                let glowColor = i % 2 === 0 ? '100,255,220' : '255,110,220';
+                let grad = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, pulseR * 2.2);
+                grad.addColorStop(0, `rgba(${glowColor},${0.9 * glow})`); grad.addColorStop(1, `rgba(${glowColor},0)`);
+                ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(tipX, tipY, pulseR * 2.2, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = i % 2 === 0 ? '#7dffe0' : '#ff8ce0';
+                ctx.beginPath(); ctx.arc(tipX, tipY, pulseR * 0.55, 0, Math.PI * 2); ctx.fill();
+            }
+            let mx = x + Math.sin(sway * 3) * radius * 0.3, my = y - radius * 1.15;
+            let mainGlow = 0.7 + 0.3 * Math.sin(t / 260 + seed * 4);
+            let mgrad = ctx.createRadialGradient(mx, my, 0, mx, my, radius * 0.6 * mainGlow);
+            mgrad.addColorStop(0, `rgba(190,140,255,${0.85 * mainGlow})`); mgrad.addColorStop(1, 'rgba(190,140,255,0)');
+            ctx.fillStyle = mgrad; ctx.beginPath(); ctx.arc(mx, my, radius * 0.6 * mainGlow, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#c9a3ff'; ctx.beginPath(); ctx.arc(mx, my, radius * 0.28, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
+
+        // Void: every tree renders as a single dark tentacle rising from a pool of black ooze,
+        // bent toward the player as if being drawn in by the player's own gravity. The bend is
+        // driven purely by the tree's current position relative to player.worldX/worldY -
+        // there's no idle sway or independent motion like the other rare-skin foliage; a
+        // stationary player means a perfectly still tentacle. Only the tip's eye-glow pulses
+        // (a timer-driven opacity flicker, not movement) to keep it feeling alive.
+        function drawVoidTentacle(x, y, radius, seed) {
+            ctx.save();
+            // Pool of ooze at the base.
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.beginPath(); ctx.ellipse(x, y + radius * 0.5, radius * 0.85, radius * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+
+            let ddx = player.worldX - x, ddy = player.worldY - y;
+            let distToPlayer = Math.hypot(ddx, ddy);
+            let targetAngle = Math.atan2(ddy, ddx);
+            let upAngle = -Math.PI / 2;
+            let angleDiff = normalizeAngle(targetAngle - upAngle);
+
+            // strength: 0 far away (tentacle stands straight up, no bend) -> 1 right at the
+            // player (full bend/reach). The steep exponent keeps strength near zero across
+            // most of maxReach and only ramps up sharply in the last stretch, so distant
+            // trees read as basically inert and the effect is strongest only when the player
+            // is practically touching the tree.
+            let maxReach = 560;
+            let strength = Math.max(0, 1 - distToPlayer / maxReach);
+            strength = Math.pow(strength, 2.4);
+
+            let bendAngle = upAngle + angleDiff * strength;
+            // The tip tracks the same proximity-scaled bend as the rest of the curve (rather
+            // than always pointing exactly at the player), so it stays attached to the drawn
+            // curve and only swings to fully face the player once strength ramps up close up.
+            let hookAngle = bendAngle;
+
+            let len = radius * (2.1 + 0.7 * strength);
+            let baseX = x, baseY = y + radius * 0.1;
+            let c1x = baseX + Math.cos(upAngle) * len * 0.32, c1y = baseY + Math.sin(upAngle) * len * 0.32;
+            let c2x = baseX + Math.cos(bendAngle) * len * 0.72, c2y = baseY + Math.sin(bendAngle) * len * 0.72;
+            let tipX = baseX + Math.cos(hookAngle) * len, tipY = baseY + Math.sin(hookAngle) * len;
+
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#180e28'; ctx.lineWidth = radius * 0.44;
+            ctx.beginPath(); ctx.moveTo(baseX, baseY); ctx.bezierCurveTo(c1x, c1y, c2x, c2y, tipX, tipY); ctx.stroke();
+            // Faint violet underbelly stripe for dimension.
+            ctx.strokeStyle = '#3d2461'; ctx.lineWidth = radius * 0.18;
+            ctx.beginPath(); ctx.moveTo(baseX, baseY); ctx.bezierCurveTo(c1x, c1y, c2x, c2y, tipX, tipY); ctx.stroke();
+
+            // Suction ridges along the curve.
+            const ridgeTs = [0.32, 0.52, 0.72];
+            for (let rt of ridgeTs) {
+                let pt = cubicPoint(baseX, baseY, c1x, c1y, c2x, c2y, tipX, tipY, rt);
+                let tan = cubicTangentAngle(baseX, baseY, c1x, c1y, c2x, c2y, tipX, tipY, rt);
+                ctx.save();
+                ctx.translate(pt.x, pt.y); ctx.rotate(tan + Math.PI / 2);
+                ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                ctx.beginPath(); ctx.ellipse(0, 0, radius * 0.17 * (1 - rt * 0.25), radius * 0.09, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.restore();
+            }
+
+            // Glowing eye at the tip, pupil oriented toward the player. Exempted from the
+            // map's grayscale filter (see draw()) the same way the ground-level blinking
+            // eyes and the fleshy rocks are - eyes stay in full color everywhere in Void.
+            ctx.save();
+            ctx.filter = 'none';
+            let glow = 0.7 + 0.3 * Math.sin(Date.now() / 450 + seed * 6);
+            let egrad = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, radius * 0.55 * glow);
+            egrad.addColorStop(0, `rgba(210,170,255,${0.8 * glow})`); egrad.addColorStop(1, 'rgba(210,170,255,0)');
+            ctx.fillStyle = egrad; ctx.beginPath(); ctx.arc(tipX, tipY, radius * 0.55 * glow, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#e8d5ff'; ctx.beginPath(); ctx.arc(tipX, tipY, radius * 0.22, 0, Math.PI * 2); ctx.fill();
+            ctx.save();
+            ctx.translate(tipX, tipY); ctx.rotate(targetAngle + Math.PI / 2);
+            ctx.fillStyle = '#0a0512';
+            ctx.beginPath(); ctx.ellipse(0, 0, radius * 0.05, radius * 0.19, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+            ctx.restore();
+
+            ctx.restore();
+        }
+
         // Rainbow skin: a soft, translucent multi-band arch fixed in world space (same "drifts
         // past as the camera moves" convention as the sun glow), lighting up the sky while
         // equipped.
@@ -3297,8 +3934,10 @@
         // Draws the animated water/lava/ice noise texture within a square region roughly `span`
         // wide, respecting whatever clip is already active on ctx. Shared by the small hazard
         // pockets that fill hex holes.
-        function drawHazardTexture(cx, cy, span) {
-            let hz = getActiveHazardTheme();
+        // PERF: hz is now passed in from drawHazardHoles, which already computed it once for
+        // the whole batch of hazard tiles this frame - previously this recomputed the same
+        // getActiveHazardTheme() result on every single tile.
+        function drawHazardTexture(cx, cy, span, hz) {
             ctx.save();
             ctx.strokeStyle = hz.edge; ctx.fillStyle = hz.edge;
             if (hz.type === 'water') { ctx.globalAlpha = 0.3; ctx.lineWidth = 3; }
@@ -3324,12 +3963,16 @@
         // untouched - purely a visual override consumed by drawHazardHoles/drawHazardTexture.
         function getActiveHazardTheme() {
             if (player.color === 'void') return { type: currentTheme.hazard.type, color: '#0d0621', edge: '#4b0082' };
-            // Galaxy: hazard pockets become miniature starfields instead of the theme's usual
-            // water/lava/ice - drawHazardHoles sprinkles twinkling stars on top of this base.
-            if (player.color === 'galaxy') return { type: currentTheme.hazard.type, color: '#0a0e2e', edge: '#7597de' };
+            // Galaxy: hazard pockets become miniature black holes instead of the theme's usual
+            // water/lava/ice - drawHazardHoles paints a swirling accretion disk on top of this
+            // near-black base, with the edge doubling as the glowing accretion-disk color.
+            if (player.color === 'galaxy') return { type: currentTheme.hazard.type, color: '#020103', edge: '#ff8a3d' };
             // Glitch: hazard pockets turn solid black with a green matrix-digit edge -
             // drawHazardHoles fills them with scrolling digit rain instead of the usual texture.
             if (player.color === 'glitch') return { type: currentTheme.hazard.type, color: '#000000', edge: '#00ff41' };
+            // Corrupted Data: hazard pockets turn hot pink instead of the theme's usual water/
+            // lava/ice - keeps the usual drawHazardTexture pattern on top, just recolored.
+            if (player.color === 'corrupted') return { type: currentTheme.hazard.type, color: '#ff1493', edge: '#ff8fd1' };
             return currentTheme.hazard;
         }
 
@@ -3342,6 +3985,11 @@
                 camera.x - buf, camera.y - buf,
                 camera.x + canvas.width + buf, camera.y + canvas.height + buf
             );
+            // PERF: hz.edge/lineWidth are the same for every hazard tile this frame - set once
+            // here instead of inside a second per-tile save/restore below (was 2 save/restore
+            // pairs per tile; now 1). The fill+clip save/restore below still has to stay
+            // per-tile since ctx.clip() must not leak between tiles.
+            ctx.lineWidth = 4; ctx.strokeStyle = hz.edge;
             for (let ti = 0; ti < candidates.length; ti++) {
                 let tile = candidates[ti];
                 if (!isOnScreen(tile.x, tile.y, buf)) continue;
@@ -3351,27 +3999,14 @@
                 ctx.fillStyle = hz.color; ctx.fill();
                 ctx.clip();
                 if (player.color === 'galaxy') {
-                    // Little starfield swirl instead of the usual water/lava/ice noise - the
-                    // hazard pocket becomes a tiny patch of open space.
-                    for (let si = 0; si < 6; si++) {
-                        let sa = (si / 6) * Math.PI * 2 + Date.now()/2000;
-                        let sr = HEX_SIZE * (0.2 + (si % 3) * 0.25);
-                        let sxp = tile.x + Math.cos(sa) * sr, syp = tile.y + Math.sin(sa) * sr;
-                        ctx.globalAlpha = 0.4 + 0.4 * Math.sin(Date.now()/300 + si*10);
-                        ctx.fillStyle = '#fff';
-                        ctx.beginPath(); ctx.arc(sxp, syp, 1.4, 0, Math.PI*2); ctx.fill();
-                    }
-                    ctx.globalAlpha = 1;
+                    drawBlackHoleSwirl(tile.x, tile.y, HEX_SIZE);
                 } else if (player.color === 'glitch') {
                     drawMatrixRain(tile.x, tile.y, HEX_SIZE);
                 } else {
-                    drawHazardTexture(tile.x, tile.y, HEX_SIZE);
+                    drawHazardTexture(tile.x, tile.y, HEX_SIZE, hz);
                 }
                 ctx.restore();
-                ctx.save();
-                ctx.lineWidth = 4; ctx.strokeStyle = hz.edge;
                 ctx.beginPath(); ctx.moveTo(c[0].x, c[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(c[i].x, c[i].y); ctx.closePath(); ctx.stroke();
-                ctx.restore();
             }
         }
 
@@ -3626,6 +4261,13 @@
             let pdrawY = player.prevWorldY + (player.worldY - player.prevWorldY) * renderAlpha;
             
             ctx.save(); ctx.translate(-camX + shakeX, -camY + shakeY); 
+            // Void: the entire map desaturates to grayscale while equipped - every layer
+            // drawn from here down (sky, floor, decor, trees, fences, hazards, coins, goal)
+            // inherits this filter via canvas state unless a draw call explicitly saves and
+            // sets filter back to 'none' for itself (see drawFleshRock, the eye branch of
+            // drawVoidDecor, the tentacle eye-glow in drawVoidTentacle, and the player block
+            // below) - those are the only things that stay in full color.
+            if (player.color === 'void') ctx.filter = 'grayscale(1)';
             drawSkyBackground();
             drawHazardHoles();
             
@@ -3652,6 +4294,57 @@
             // Glitch: while equipped, the entire visible floor renders solid black - overrides
             // the theme ground color set just above, same clip already active.
             if (player.color === 'glitch') { ctx.fillStyle = '#000'; ctx.fill(); }
+            // Corrupted Data: while equipped, the entire visible floor renders blank white -
+            // same override pattern as Glitch above, same clip already active.
+            if (player.color === 'corrupted') { ctx.fillStyle = '#ffffff'; ctx.fill(); }
+            // Galaxy: while equipped, the floor becomes cratered lunar regolith - a pale grey
+            // base with a scatter of shaded craters (each with a soft rim highlight) and a
+            // fine dust speckle. Craters/speckle come from a stable per-tile hash (same trick
+            // as drawGalaxyStars) so the terrain reads as fixed ground, not noise that
+            // reshuffles every frame.
+            if (player.color === 'galaxy') {
+                ctx.fillStyle = '#c7c2ba'; ctx.fill();
+                ctx.save();
+                for (let li = 0; li < visLand.length; li++) {
+                    let lt = visLand[li];
+                    for (let ci = 0; ci < 2; ci++) {
+                        let seed = Math.abs(Math.sin(lt.x * 12.9898 + lt.y * 78.233 + ci * 37.7) * 43758.5453); seed -= Math.floor(seed);
+                        if (seed > 0.55) continue; // keep craters sparse, not every tile
+                        let ccx = lt.x + (seed - 0.5) * HEX_SIZE * 1.3;
+                        let ccy = lt.y + (((seed * 53) % 1) - 0.5) * HEX_SIZE * 1.3;
+                        let cr = HEX_SIZE * (0.12 + seed * 0.16);
+                        ctx.fillStyle = 'rgba(90,86,80,0.35)';
+                        ctx.beginPath(); ctx.ellipse(ccx, ccy, cr, cr * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+                        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1;
+                        ctx.beginPath(); ctx.ellipse(ccx, ccy - cr * 0.15, cr, cr * 0.75, 0, Math.PI, Math.PI * 2); ctx.stroke();
+                    }
+                    let dseed = Math.abs(Math.sin(lt.x * 3.7 + lt.y * 9.1) * 5871.3); dseed -= Math.floor(dseed);
+                    if (dseed < 0.5) {
+                        ctx.fillStyle = 'rgba(120,115,108,0.4)';
+                        ctx.beginPath(); ctx.arc(lt.x + (dseed - 0.5) * HEX_SIZE, lt.y + (((dseed * 17) % 1) - 0.5) * HEX_SIZE, 1.4, 0, Math.PI * 2); ctx.fill();
+                    }
+                }
+                ctx.restore();
+            }
+            // Void: while equipped, the floor becomes a dark, uneven expanse - a near-black
+            // base with slow-pulsing patches of deeper mottling scattered per-tile (same
+            // stable-hash trick as the Galaxy craters above, so the pattern doesn't reshuffle
+            // every frame). Drawn under the grayscale filter like everything else here.
+            if (player.color === 'void') {
+                ctx.fillStyle = '#0b0708'; ctx.fill();
+                ctx.save();
+                let voidT = Date.now();
+                for (let li = 0; li < visLand.length; li++) {
+                    let lt = visLand[li];
+                    let seed = Math.abs(Math.sin(lt.x * 12.9898 + lt.y * 78.233) * 43758.5453); seed -= Math.floor(seed);
+                    if (seed > 0.45) continue; // keep mottling sparse, not every tile
+                    let mr = HEX_SIZE * (0.3 + seed * 0.4);
+                    let pulse = 0.5 + 0.5 * Math.sin(voidT / 1800 + lt.x * 0.01 + lt.y * 0.01);
+                    ctx.fillStyle = `rgba(40,8,12,${0.18 + 0.18 * pulse})`;
+                    ctx.beginPath(); ctx.ellipse(lt.x + (seed - 0.5) * HEX_SIZE, lt.y + (((seed * 53) % 1) - 0.5) * HEX_SIZE, mr, mr * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.restore();
+            }
             // Glacier ("ice") skin: hexes the player has slid over stay snow-frosted, still
             // clipped to the land shape above so it never bleeds past the honeycomb edge.
             if (iceFrostedTiles.size) {
@@ -3757,10 +4450,20 @@
             for (let di = 0; di < decorCandidates.length; di++) {
                 let d = decorCandidates[di];
                 if(isOnScreen(d.x + tiltX, d.y + tiltY, cullBuffer)) {
-                    ctx.fillStyle = d.color; ctx.strokeStyle = d.color; ctx.lineWidth = 2;
-                    if (d.type === 0) { ctx.beginPath(); ctx.arc(d.x, d.y, 3, 0, Math.PI*2); ctx.fill(); } 
-                    else if (d.type === 1) { ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-4+breezeX*5, d.y-8); ctx.lineTo(d.x+4+breezeX*5, d.y-8); ctx.fill(); } 
-                    else { ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.quadraticCurveTo(d.x + breezeX*5, d.y - 6, d.x + breezeX*10, d.y - 12); ctx.stroke(); }
+                    // Glitch: every grass/flower/leaf speck renders as an annoying pop-up
+                    // glyph instead of its usual foliage art - a mini ad window, a mini alert
+                    // badge, or a mini notification bubble, cycled by speck type (see
+                    // drawGlitchPopupDecor).
+                    if (player.color === 'glitch') {
+                        drawGlitchPopupDecor(d, breezeX);
+                    } else if (player.color === 'void') {
+                        drawVoidDecor(d, breezeX);
+                    } else {
+                        ctx.fillStyle = d.color; ctx.strokeStyle = d.color; ctx.lineWidth = 2;
+                        if (d.type === 0) { ctx.beginPath(); ctx.arc(d.x, d.y, 3, 0, Math.PI*2); ctx.fill(); } 
+                        else if (d.type === 1) { ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x-4+breezeX*5, d.y-8); ctx.lineTo(d.x+4+breezeX*5, d.y-8); ctx.fill(); } 
+                        else { ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.quadraticCurveTo(d.x + breezeX*5, d.y - 6, d.x + breezeX*10, d.y - 12); ctx.stroke(); }
+                    }
                 }
             }
             ctx.restore(); 
@@ -3796,7 +4499,7 @@
             for (let i = 0; i < items.length; i++) { let c = items[i]; if (!c.collected && isOnScreen(c.x + tiltX, c.y + tiltY, cullBuffer)) pushRQ(c.type, c, c.y + (c.radius || 0)); }
             for (let i = 0; i < projectiles.length; i++) { let p = projectiles[i]; if (isOnScreen(p.x + tiltX, p.y + tiltY, cullBuffer)) pushRQ('projectile', p, p.y + (p.radius || 0)); }
             for (let i = 0; i < icicles.length; i++) { let ic = icicles[i]; if (isOnScreen(ic.x + tiltX, ic.y + tiltY, cullBuffer)) pushRQ('icicle', ic, ic.y + (ic.radius || 0)); }
-            for (let i = 0; i < flameParticles.length; i++) { let f = flameParticles[i]; if (isOnScreen(f.x + tiltX, f.y + tiltY, cullBuffer)) pushRQ('flame', f, f.y + (f.radius || 0)); }
+            for (let i = 0; i < flameParticles.length; i++) { let f = flameParticles[i]; if (player.color === 'corrupted' && f.source === 'firecone') continue; if (isOnScreen(f.x + tiltX, f.y + tiltY, cullBuffer)) pushRQ('flame', f, f.y + (f.radius || 0)); }
             for (let i = 0; i < leaves.length; i++) { let l = leaves[i]; if (isOnScreen(l.x + tiltX, l.y + tiltY, cullBuffer)) pushRQ('leaf', l, l.y + (l.radius || 0)); }
             for (let i = 0; i < splashes.length; i++) { let s = splashes[i]; if (isOnScreen(s.x + tiltX, s.y + tiltY, cullBuffer)) pushRQ('splash', s, s.y + (s.radius || 0)); }
             for (let i = 0; i < powerups.length; i++) { let p = powerups[i]; if (!p.collected && isOnScreen(p.x + tiltX, p.y + tiltY, cullBuffer)) pushRQ('powerup', p, p.y + (p.radius || 0)); }
@@ -3810,13 +4513,32 @@
                 let isLocked = goal.collected < goal.required; let pulse = isLocked ? 0 : Math.sin(Date.now() / 150) * 8;
                 ctx.save(); ctx.translate(goal.x, goal.y);
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; ctx.beginPath(); ctx.ellipse(0, 15, goal.radius, goal.radius * 0.5, 0, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(0, 0, goal.radius + pulse + 10, 0, Math.PI*2); ctx.fillStyle = isLocked ? 'rgba(136, 136, 136, 0.2)' : 'rgba(255, 207, 51, 0.3)'; ctx.fill();
-                ctx.beginPath(); ctx.arc(0, 0, goal.radius, 0, Math.PI*2); ctx.fillStyle = isLocked ? '#555' : '#ffcf33'; ctx.fill();
-                ctx.lineWidth = 4; ctx.strokeStyle = isLocked ? '#888' : '#fff'; ctx.stroke();
-                ctx.beginPath(); ctx.arc(0, 0, goal.radius * 0.7, 0, Math.PI*2); ctx.fillStyle = isLocked ? '#444' : '#f1c40f'; ctx.fill();
-                ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                if (isLocked) { drawPixelIcon('lock', ctx, 0, -8, 26); ctx.font = 'bold 14px sans-serif'; ctx.fillText(`${goal.collected}/${goal.required}`, 0, 15); } 
-                else { ctx.font = 'bold 20px sans-serif'; ctx.fillText('GOAL', 0, 0); }
+                if (player.color === 'glitch') {
+                    // Glitch: the goal renders as a ring surrounding a miniature Blue Screen
+                    // of Death instead of the usual yellow flag, all the time.
+                    ctx.beginPath(); ctx.arc(0, 0, goal.radius + pulse + 10, 0, Math.PI*2); ctx.fillStyle = isLocked ? 'rgba(136, 136, 136, 0.2)' : 'rgba(0, 120, 215, 0.35)'; ctx.fill();
+                    ctx.beginPath(); ctx.arc(0, 0, goal.radius, 0, Math.PI*2); ctx.fillStyle = isLocked ? '#333' : '#0078d7'; ctx.fill();
+                    ctx.lineWidth = 4; ctx.strokeStyle = isLocked ? '#888' : '#fff'; ctx.stroke();
+                    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, goal.radius * 0.78, 0, Math.PI*2); ctx.clip();
+                    ctx.fillStyle = isLocked ? '#222' : '#0078d7'; ctx.fillRect(-goal.radius, -goal.radius, goal.radius*2, goal.radius*2);
+                    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    if (isLocked) { ctx.font = 'bold 12px monospace'; ctx.fillText(`${goal.collected}/${goal.required}`, 0, 0); }
+                    else {
+                        ctx.font = 'bold 22px sans-serif'; ctx.fillText(':(', 0, -goal.radius*0.28);
+                        ctx.font = '7px monospace';
+                        ctx.fillText('A fatal exception has', 0, goal.radius*0.05);
+                        ctx.fillText('occurred at SLIME.EXE', 0, goal.radius*0.22);
+                    }
+                    ctx.restore();
+                } else {
+                    ctx.beginPath(); ctx.arc(0, 0, goal.radius + pulse + 10, 0, Math.PI*2); ctx.fillStyle = isLocked ? 'rgba(136, 136, 136, 0.2)' : 'rgba(255, 207, 51, 0.3)'; ctx.fill();
+                    ctx.beginPath(); ctx.arc(0, 0, goal.radius, 0, Math.PI*2); ctx.fillStyle = isLocked ? '#555' : '#ffcf33'; ctx.fill();
+                    ctx.lineWidth = 4; ctx.strokeStyle = isLocked ? '#888' : '#fff'; ctx.stroke();
+                    ctx.beginPath(); ctx.arc(0, 0, goal.radius * 0.7, 0, Math.PI*2); ctx.fillStyle = isLocked ? '#444' : '#f1c40f'; ctx.fill();
+                    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    if (isLocked) { drawPixelIcon('lock', ctx, 0, -8, 26); ctx.font = 'bold 14px sans-serif'; ctx.fillText(`${goal.collected}/${goal.required}`, 0, 15); } 
+                    else { ctx.font = 'bold 20px sans-serif'; ctx.fillText('GOAL', 0, 0); }
+                }
                 ctx.restore();
             }
 
@@ -3830,6 +4552,16 @@
                     // instead of its normal art, all the time (not just ones the player's
                     // bumped) - the sky/hazard/floor takeover happens elsewhere in draw().
                     if (player.color === 'glitch') { drawMissingImageBox(t.x, t.y, t.radius); return; }
+                    // Corrupted Data: every tree renders as its raw collision circle instead
+                    // of any art at all.
+                    if (player.color === 'corrupted') { drawHitboxCircle(t.x, t.y, t.radius, '#39ff14', 'TREE'); return; }
+                    // Galaxy: every tree renders as a glowing alien plant instead of its usual
+                    // foliage, all the time (not just ones the player's bumped).
+                    if (player.color === 'galaxy') { drawAlienPlant(t.x, t.y, t.radius, t.seed || 0); return; }
+                    // Void: every tree renders as a dark tentacle bent toward the player by
+                    // the player's own gravity, all the time (not just ones the player's
+                    // bumped).
+                    if (player.color === 'void') { drawVoidTentacle(t.x, t.y, t.radius, t.seed || 0); return; }
                     let variant = t.variant || 0; let sway = (currentTheme.name === 'Desert' ? 0 : Math.sin(Date.now()/1400 + (t.seed||0)) * 0.05) + breezeX;
                     if (t.type === 'tree' && currentTheme.name !== 'Desert' && currentTheme.name !== 'Snow') {
                         if (Math.abs(player.vx) + Math.abs(player.vy) > 12 && Math.random() < 0.06 && dist(player.worldX, player.worldY, t.x, t.y) < 600) {
@@ -3909,6 +4641,16 @@
                     // Glitch: every rock renders as a garish pop-up ad box instead of its
                     // normal art, all the time.
                     if (player.color === 'glitch') { drawPopupAdBox(r.x, r.y, r.radius); return; }
+                    // Corrupted Data: every rock renders as its raw collision circle instead
+                    // of any art at all.
+                    if (player.color === 'corrupted') { drawHitboxCircle(r.x, r.y, r.radius, '#39ff14', 'ROCK'); return; }
+                    // Galaxy: every rock renders as a cratered moon rock instead of its usual
+                    // theme art, all the time.
+                    if (player.color === 'galaxy') { drawMoonRock(r.x, r.y, r.radius); return; }
+                    // Void: every rock renders as an oozing mass of red flesh instead of its
+                    // usual theme art, all the time - kept in full color while the rest of
+                    // the map desaturates (see drawFleshRock).
+                    if (player.color === 'void') { drawFleshRock(r.x, r.y, r.radius); return; }
                     let variant = r.variant || 0;
                     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(r.x, r.y + r.radius*0.18, r.radius*1.05, r.radius*0.4, 0, 0, Math.PI*2); ctx.fill();
                     if (r.golden) {
@@ -3932,6 +4674,12 @@
                     // to match that edge. Fences don't occupy a hex's single-element slot, so
                     // these draw independently of whatever tree/rock/coin/chest sits at center.
                     let f = item.obj;
+                    // Corrupted Data: fences are solid collision same as trees/rocks, so they
+                    // render as their raw hitbox line instead of the usual post-and-rail art.
+                    if (player.color === 'corrupted') { drawHitboxLine(f.x1, f.y1, f.x2, f.y2, fenceThickness, '#39ff14', 'FENCE'); return; }
+                    // Glitch: every fence renders as a blazing "firewall" barrier instead of
+                    // the usual post-and-rail art, all the time.
+                    if (player.color === 'glitch') { drawFirewallSegment(f); return; }
                     let angle = Math.atan2(f.y2 - f.y1, f.x2 - f.x1);
                     let len = Math.hypot(f.x2 - f.x1, f.y2 - f.y1);
                     ctx.save(); ctx.translate(f.midX, f.midY); ctx.rotate(angle);
@@ -3960,7 +4708,11 @@
                     // dispatch pattern as window.EnemySprites for enemies (SECTION 8 below)
                     // and window.IconSprites for UI icons (SECTION 4).
                     let c = item.obj;
-                    if (window.LootSprites && window.LootSprites[item.type]) window.LootSprites[item.type](ctx, c);
+                    // Corrupted Data: coins/gems render as their raw pickup-radius hitbox
+                    // (gold - the one category here that's neither hazard nor obstacle).
+                    if (player.color === 'corrupted') { drawHitboxCircle(c.x, c.y, c.radius, '#ffd700', item.type.toUpperCase().slice(0, 6)); }
+                    else if (player.color === 'glitch') { drawRainbowWheelOfDeath(c.x, c.y, c.radius); }
+                    else if (window.LootSprites && window.LootSprites[item.type]) window.LootSprites[item.type](ctx, c);
                 }
                 else if (item.type === 'powerup') {
                     let p = item.obj; let pu = powerupTypesById.get(p.typeId); let bob = Math.sin(Date.now()/260 + (p.spawnSeed||0)) * 6; let spin = (Date.now()/450) % (Math.PI*2);
@@ -4018,11 +4770,19 @@
                 }
                 else if (item.type === 'projectile') {
                     let p = item.obj;
-                    ctx.fillStyle = p.deflected ? '#ff477e' : '#ff0055'; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill();
-                    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x-2, p.y-2, p.radius*0.4, 0, Math.PI*2); ctx.fill();
+                    // Corrupted Data: enemy projectiles render as their raw collision circle.
+                    if (player.color === 'corrupted') { drawHitboxCircle(p.x, p.y, p.radius, '#ff003c', 'PRJ'); }
+                    else {
+                        ctx.fillStyle = p.deflected ? '#ff477e' : '#ff0055'; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill();
+                        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x-2, p.y-2, p.radius*0.4, 0, Math.PI*2); ctx.fill();
+                    }
                 }
                 else if (item.type === 'icicle') {
                     let ic = item.obj;
+                    // Corrupted Data: the player's own projectiles (icicles) render as their
+                    // raw collision circle too, distinguished by color from hostile hitboxes.
+                    if (player.color === 'corrupted') { drawHitboxCircle(ic.x, ic.y, ic.radius, '#00e5ff', 'PPRJ'); }
+                    else {
                     ctx.save(); ctx.translate(ic.x, ic.y); ctx.rotate(ic.angle);
                     // PERF: this gradient is drawn entirely in local (post-translate/rotate)
                     // space with fixed coordinates (-14,0)-(10,0) and fixed color stops - it is
@@ -4037,6 +4797,7 @@
                     ctx.fillStyle = icicleGradientCache;
                     ctx.beginPath(); ctx.moveTo(-14, -3); ctx.lineTo(8, -1.5); ctx.lineTo(12, 0); ctx.lineTo(8, 1.5); ctx.lineTo(-14, 3); ctx.closePath(); ctx.fill();
                     ctx.strokeStyle = '#0a2e44'; ctx.lineWidth = 0.6; ctx.stroke(); ctx.restore();
+                    }
                 }
                 else if (item.type === 'flame') {
                     let f = item.obj; let alpha = Math.max(0, f.life / f.maxLife);
@@ -4071,7 +4832,10 @@
                         e.y = e.prevY + (realEY - e.prevY) * renderAlpha;
                     }
                     let sprite = window.EnemySprites && window.EnemySprites[e.type];
-                    if (sprite) sprite(ctx, e, player);
+                    // Corrupted Data: skip the enemy's usual sprite art entirely and draw its
+                    // raw collision circle instead, labeled with its type.
+                    if (player.color === 'corrupted') { drawHitboxCircle(e.x, e.y, e.radius, '#ff003c', (e.type || 'ENEMY').toUpperCase().slice(0, 6)); }
+                    else if (sprite) sprite(ctx, e, player);
                     e.x = realEX; e.y = realEY;
                 }
                 else if (item.type === 'companion') {
@@ -4083,6 +4847,9 @@
                 }
                 else if (item.type === 'player') {
                     let p = item.obj;
+                    // Void: the player's own slime (and its powerup effects/orbiting items)
+                    // stays in full color - only the map desaturates, not the character.
+                    if (player.color === 'void') { ctx.save(); ctx.filter = 'none'; }
                     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(pdrawX, pdrawY + p.radius, p.radius * 0.9, p.radius * 0.4, 0, 0, Math.PI*2); ctx.fill();
                     if (p.activePowerup === 'rampage') {
                         ctx.save();
@@ -4095,7 +4862,23 @@
                     }
                     if (p.activePowerup === 'lightning') {
                         let target = getLightningTargetWorld();
-                        drawLightningBolt(pdrawX, pdrawY, target.x, target.y);
+                        // Corrupted Data: the beam's actual kill-check is a capsule of radius
+                        // pu.radius around the player->target segment, so render that hitbox
+                        // instead of the usual jagged bolt art.
+                        if (player.color === 'corrupted') {
+                            let pu = powerupTypesById.get('lightning');
+                            drawHitboxLine(pdrawX, pdrawY, target.x, target.y, (pu ? pu.radius : 34) * 2, '#00e5ff', 'BOLT');
+                        } else {
+                            drawLightningBolt(pdrawX, pdrawY, target.x, target.y);
+                        }
+                    }
+                    // Corrupted Data: the fire breath cone's actual kill-check is a pie slice of
+                    // pu.radius spanning +/- PI/2.1 around facing (see applyPowerupEffect), so
+                    // render that hitbox instead of letting the flame particles stand in for it.
+                    if (p.activePowerup === 'fire' && player.color === 'corrupted') {
+                        let pu = powerupTypesById.get('fire');
+                        let facing = (Math.abs(p.vx) + Math.abs(p.vy) > 0.3) ? Math.atan2(p.vy, p.vx) : p.facing;
+                        drawHitboxCone(pdrawX, pdrawY, pu ? pu.radius : 150, facing, Math.PI / 2.1, '#00e5ff', 'FIRE');
                     }
                     drawCharacterModel(pdrawX, pdrawY, p.vx, p.vy, p.radius, p.color, Math.abs(p.jiggleForceX) + Math.abs(p.jiggleForceY) > 0, p.hat);
                     // Roguelite: Shuriken item - orbiting blades drawn around the player
@@ -4106,11 +4889,19 @@
                             let ang = shurikenSpin + (s / shurikenStacksDraw) * Math.PI * 2;
                             let sx = pdrawX + Math.cos(ang) * orbitRadius;
                             let sy = pdrawY + Math.sin(ang) * orbitRadius;
-                            ctx.save(); ctx.translate(sx, sy); ctx.rotate(shurikenSpin * 4);
-                            drawPixelIcon('shuriken', ctx, 0, 0, 33);
-                            ctx.restore();
+                            // Corrupted Data: shurikens hit enemies/deflect bullets within an
+                            // 11px radius of their orbit position (see the roguelite update
+                            // loop), so render that hitbox instead of the spinning blade icon.
+                            if (player.color === 'corrupted') {
+                                drawHitboxCircle(sx, sy, 11, '#00e5ff', 'SHRK');
+                            } else {
+                                ctx.save(); ctx.translate(sx, sy); ctx.rotate(shurikenSpin * 4);
+                                drawPixelIcon('shuriken', ctx, 0, 0, 33);
+                                ctx.restore();
+                            }
                         }
                     }
+                    if (player.color === 'void') { ctx.restore(); }
                 }
                 
                 if (isWaterObj) { ctx.restore(); }
@@ -4125,9 +4916,21 @@
                     let radius = Math.min(canvas.width / 2, canvas.height / 2) - 40;
                     ctx.save();
                     ctx.translate(canvas.width / 2 + Math.cos(angle) * radius, canvas.height / 2 + Math.sin(angle) * radius); ctx.rotate(angle);
-                    ctx.fillStyle = goal.collected < goal.required ? '#999999' : '#ffcf33'; ctx.strokeStyle = goal.collected < goal.required ? '#666666' : '#d4a017';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-5, 0); ctx.lineTo(-15, -15); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+                    if (player.color === 'glitch') {
+                        // Glitch: the off-screen goal pointer renders as a classic OS mouse
+                        // cursor, tip aimed toward the goal, instead of the usual arrowhead.
+                        ctx.fillStyle = goal.collected < goal.required ? '#999999' : '#fff'; ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 2; ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        ctx.moveTo(19, 0); ctx.lineTo(-9, -9); ctx.lineTo(-4, -3); ctx.lineTo(-15, -3);
+                        ctx.lineTo(-15, 3); ctx.lineTo(-4, 3); ctx.lineTo(-9, 9); ctx.closePath();
+                        ctx.fill(); ctx.stroke();
+                    } else {
+                        ctx.fillStyle = goal.collected < goal.required ? '#999999' : '#ffcf33'; ctx.strokeStyle = goal.collected < goal.required ? '#666666' : '#d4a017';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-5, 0); ctx.lineTo(-15, -15); ctx.closePath(); ctx.fill(); ctx.stroke();
+                    }
+                    ctx.restore();
                 }
             }
             
@@ -4232,13 +5035,18 @@
 
 
         // ---- TEMPORARY PERF OVERLAY (v2 — clock/timestamp diagnostic) ----
-        // Hidden by default now. Click the "Remove Hat" button in the shop's Hats tab 20 times
-        // in a row to toggle it on/off (see removeHatClickCount in SECTION 6).
+        // Hidden by default. Tied to the secret Corrupted Data skin: shows automatically while
+        // it's equipped, hides again the moment it's unequipped (see syncPerfOverlay, called
+        // from equipItem). No longer toggled by the Remove Hat click streak.
         const perfOverlay = document.createElement('div');
         perfOverlay.id = 'perf-overlay';
         perfOverlay.style.cssText = 'display:none;position:fixed;top:4px;left:4px;z-index:9999;background:rgba(0,0,0,0.75);color:#0f0;font-family:monospace;font-size:11px;padding:4px 6px;border-radius:4px;pointer-events:none;white-space:pre;line-height:1.4;';
         perfOverlay.innerText = 'perf: warming up...';
         document.body.appendChild(perfOverlay);
+        // Sets (not toggles) the overlay's visibility to match whether Corrupted Data is
+        // currently equipped - safe to call as often as needed, e.g. on every skin equip.
+        function syncPerfOverlay() { perfOverlay.style.display = (player.color === 'corrupted') ? 'block' : 'none'; }
+        syncPerfOverlay();
 
         let perfStats = {
             update: 0, draw: 0, pixelate: 0, frames: 0, catchUpHits: 0,
