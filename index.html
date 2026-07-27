@@ -2620,24 +2620,23 @@
                 }
             }
 
-            // Rare traveling traders: same one-per-level, land-hex-placement pattern as
-            // fishingScene above, just without the water-edge requirement (any open land hex
-            // works - see pickLandHex). Each rolls independently at a low flat chance from
-            // level 3 on, so most levels have neither, some have one, and rarely both. Stock is
-            // rolled once at spawn time (rollTraderStock) and persists until the player touches
-            // the trader or the level ends, whichever comes first.
-            if (level >= 3 && Math.random() < 0.05) {
+            // Rare traveling traders: same land-hex-placement pattern as fishingScene above,
+            // just without the water-edge requirement (any open land hex works - see
+            // pickLandHex). Unlike fishingScene's flat random chance, these are deterministic:
+            // exactly one trader (never both) shows up every third level starting at level 3,
+            // with a coin flip deciding which. Stock is rolled once at spawn time
+            // (rollTraderStock) and persists until the player touches the trader or the level
+            // ends, whichever comes first.
+            if (level >= 3 && level % 3 === 0) {
                 let t = pickLandHex(220);
                 if (t) {
-                    skinTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: rollTraderStock() };
-                    t.element = { type: 'skinTrader' };
-                }
-            }
-            if (level >= 3 && Math.random() < 0.05) {
-                let t = pickLandHex(220);
-                if (t) {
-                    goldTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: rollTraderStock() };
-                    t.element = { type: 'goldTrader' };
+                    if (Math.random() < 0.5) {
+                        skinTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: rollTraderStock() };
+                        t.element = { type: 'skinTrader' };
+                    } else {
+                        goldTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: rollTraderStock() };
+                        t.element = { type: 'goldTrader' };
+                    }
                 }
             }
 
