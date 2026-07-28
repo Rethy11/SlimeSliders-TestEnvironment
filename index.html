@@ -1364,7 +1364,8 @@
             hat: storage.get('landSlidersHat') || null,
             jiggleForceX: 0, jiggleForceY: 0, activePowerup: null, powerupDuration: 0,
             powerupTimeLeft: 0, powerupTickTimer: 0, facing: 0, hazardTimer: 0, spikesTimer: 0,
-            plasmaTimer: 0, invulnerableTimer: 0, wilkshirianTimer: 0, spectreBoostTimer: 0
+            plasmaTimer: 0, invulnerableTimer: 0, wilkshirianTimer: 0, spectreBoostTimer: 0,
+            lionChargeTimer: 0, lionDashTimer: 0, lionDashAngle: 0
         };
         // Number of Devil Deal charges burned so far this run (see triggerGameOver) - tracked
         // separately from runItems.devildeal (remaining active charges) so the HUD can keep
@@ -1588,9 +1589,9 @@
             mythic_kingslime: { id: 'mythic_kingslime', rarity: 'mythic', bossId: 'kingslime', name: 'Royal Jelly',
                 desc: 'Periodically splits off slime globs that seek out and pop enemies, mimicking King Slime\'s own Slime Split - and pulls in any loot they knock loose. Each stack fires more globs and more often.' },
             mythic_desertlion: { id: 'mythic_desertlion', rarity: 'mythic', bossId: 'desertlion', name: 'Sandstorm Mane',
-                desc: 'Periodically unleashes a Roar Shockwave of your own, and the recoil gives you a burst of Sand Pounce speed. Each stack fires more shards and more often.' },
+                desc: 'Periodically winds up, then unleashes an invincible Sand Pounce dash that kills every enemy in your path. Each stack winds up faster and dashes farther.' },
             mythic_yeti: { id: 'mythic_yeti', rarity: 'mythic', bossId: 'yeti', name: 'Frostbound Horn',
-                desc: 'Periodically triggers an Ice Slam around you, the frost numbing you to harm for a moment after. Each stack fires more shards and more often.' },
+                desc: 'Periodically unleashes the Yeti\'s own Frost Breath - a spray of many icicle shards toward wherever you\'re heading. Each stack fires more shards and more often.' },
             mythic_lavaworm: { id: 'mythic_lavaworm', rarity: 'mythic', bossId: 'lavaworm', name: 'Molten Core',
                 desc: 'Periodically erupts in a Magma Burst of embers, melting a little extra gold out of the ground each time. Each stack fires more embers and more often.' },
             mythic_crocodile: { id: 'mythic_crocodile', rarity: 'mythic', bossId: 'crocodile', name: 'Ancient Jaws',
@@ -1922,9 +1923,12 @@
                 themeIndex: 1, radius: 42, speedMult: 1.05, name: 'Desert Lion',
                 bodyColor: '#d9a441', darkColor: '#8a5a1e', crownColor: '#6b3f16',
                 attacks: [
-                    { // Sand Pounce - fast charge toward the player, dasher-style
-                        name: 'Sand Pounce', telegraph: 65, duration: 55, cooldown: 150,
-                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                    { // Sand Pounce - fast charge toward the player, dasher-style. Direction is
+                      // locked in and telegraphed the instant the wind-up starts (see the dash
+                      // flag handling in the boss telegraph-state update / draw code) rather
+                      // than only decided the instant it fires.
+                        name: 'Sand Pounce', telegraph: 65, duration: 55, cooldown: 150, dash: true,
+                        exec: (e) => { playSFX('bull_charge'); },
                         tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 3.2; e.y += Math.sin(e.chargeAngle) * e.speed * 3.2; }
                     },
                     { // Roar Shockwave - full-ring bullet-hell burst
@@ -1952,8 +1956,8 @@
                         tick: (e) => { if (e._breathTicks > 0 && e.stateTimer % 8 === 0) { bossFireAimedSpread(e, 2, 0.35, 2.6, 8); e._breathTicks--; } }
                     },
                     { // Avalanche Charge - charges across the map leaving a trail of icicle shards
-                        name: 'Avalanche Charge', telegraph: 65, duration: 60, cooldown: 170,
-                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                        name: 'Avalanche Charge', telegraph: 65, duration: 60, cooldown: 170, dash: true,
+                        exec: (e) => { playSFX('bull_charge'); },
                         tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 2.4; e.y += Math.sin(e.chargeAngle) * e.speed * 2.4; if (e.stateTimer % 12 === 0) projectiles.push({ x: e.x, y: e.y, vx: 0, vy: 0.01, radius: 10, bossId: e.bossId }); }
                     }
                 ]
@@ -1988,13 +1992,13 @@
                         tick: (e) => { if (e.stateTimer % 6 === 0 && e._sweepStep <= 6) { let a = e._sweepBase + (e._sweepStep / 6) * Math.PI; projectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 4, vy: Math.sin(a) * 4, radius: 8, bossId: e.bossId }); e._sweepStep++; } }
                     },
                     { // Death Roll - short charge that ends in a full-ring burst
-                        name: 'Death Roll', telegraph: 60, duration: 45, cooldown: 170,
-                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                        name: 'Death Roll', telegraph: 60, duration: 45, cooldown: 170, dash: true,
+                        exec: (e) => { playSFX('bull_charge'); },
                         tick: (e) => { if (e.stateTimer < 30) { e.x += Math.cos(e.chargeAngle) * e.speed * 2.6; e.y += Math.sin(e.chargeAngle) * e.speed * 2.6; } if (e.stateTimer === 30) { bossFireRadial(e, 8, 3.4, 8); screenShake = Math.max(screenShake, 8); playSFX('lightning'); } }
                     },
                     { // Snap Lunge - quick short dash bite with a brief AOE at the mouth
-                        name: 'Snap Lunge', telegraph: 45, duration: 20, cooldown: 120,
-                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); bossTelegraphAoe(e, e.x + Math.cos(e.chargeAngle) * 70, e.y + Math.sin(e.chargeAngle) * 70, 55, 20); },
+                        name: 'Snap Lunge', telegraph: 45, duration: 20, cooldown: 120, dash: true,
+                        exec: (e) => { bossTelegraphAoe(e, e.x + Math.cos(e.chargeAngle) * 70, e.y + Math.sin(e.chargeAngle) * 70, 55, 20); },
                         tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 1.6; e.y += Math.sin(e.chargeAngle) * e.speed * 1.6; }
                     }
                 ]
@@ -2009,8 +2013,8 @@
                         tick: (e) => { if (e.stateTimer === 34) { bossFireRadial(e, 8, 3, 7); screenShake = Math.max(screenShake, 9); playSFX('enemy_hit'); } }
                     },
                     { // Charge Swipe - dash across the arena leaving a projectile trail
-                        name: 'Charge Swipe', telegraph: 60, duration: 50, cooldown: 160,
-                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                        name: 'Charge Swipe', telegraph: 60, duration: 50, cooldown: 160, dash: true,
+                        exec: (e) => { playSFX('bull_charge'); },
                         tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 2.5; e.y += Math.sin(e.chargeAngle) * e.speed * 2.5; if (e.stateTimer % 10 === 0) projectiles.push({ x: e.x, y: e.y, vx: 0, vy: 0.01, radius: 9, bossId: e.bossId }); }
                     },
                     { // Leaf Fling - 3-way spread
@@ -2906,6 +2910,14 @@
         // boss's own attack, plus one small utility effect beyond just damage. Ticked from a
         // per-id counter on `player.mythicTimers` (reset in resetGame's player fields reset).
         // ==========================================
+        // Lion mythic item (Sandstorm Mane) timing - wind-up length before the dash fires and
+        // how long the invincible dash itself lasts, both in frames. See mythicItemEngine's
+        // mythic_desertlion.proc (which only starts the wind-up) and the lionChargeTimer/
+        // lionDashTimer tick in the main update loop (which actually launches + drives it).
+        const LION_CHARGE_FRAMES = 36;
+        const LION_DASH_FRAMES = 22;
+        const LION_DASH_SPEED = 12;
+
         const mythicItemEngine = {
             mythic_kingslime: {
                 baseInterval: 480, tint: '#3fd67a',
@@ -2920,21 +2932,32 @@
             mythic_desertlion: {
                 baseInterval: 440, tint: '#d9a441',
                 proc: (count) => {
-                    let n = 6 + count * 2; let speed = 4.2;
-                    for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 300, radius: 7, tint: '#d9a441' }); }
-                    // Utility: a burst of pounce speed in whatever direction you're moving.
-                    let m = Math.hypot(player.vx, player.vy);
-                    if (m > 0.1) { player.vx += (player.vx/m) * 4; player.vy += (player.vy/m) * 4; }
+                    // Winds up an invincible Sand Pounce dash instead of firing instantly - see
+                    // the lionChargeTimer/lionDashTimer tick in the main update loop for the
+                    // actual wind-up glow, launch, and kill-on-touch, and drawBossGeneric-style
+                    // warning telegraph isn't needed here since it's drawn directly around the
+                    // player (see the charge-glow draw pass). Each stack winds up a bit faster
+                    // and dashes a bit farther, on top of the normal per-stack interval shrink.
+                    if (player.lionChargeTimer > 0 || player.lionDashTimer > 0) return;
+                    let chargeLen = Math.max(14, LION_CHARGE_FRAMES - (count - 1) * 3);
+                    player.lionChargeTimer = chargeLen; player.lionChargeMax = chargeLen;
+                    player.lionDashStacks = count;
                     playSFX('bull_charge');
                 }
             },
             mythic_yeti: {
-                baseInterval: 520, tint: '#bfe8f5',
+                baseInterval: 480, tint: '#bfe8f5',
                 proc: (count) => {
-                    let n = 6 + count; let speed = 3;
-                    for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 220, radius: 8, tint: '#bfe8f5' }); }
-                    // Utility: the frost numbs you to harm for a moment after.
-                    player.invulnerableTimer = Math.max(player.invulnerableTimer || 0, 45 + count * 6);
+                    // Mimics the Yeti's own many-bullets attack (Frost Breath): a spray of
+                    // icicle shards fired in a tight cone toward wherever you're heading.
+                    let facing = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
+                    let n = 9 + count * 3; let spread = 0.85;
+                    for (let i = 0; i < n; i++) {
+                        let t = n === 1 ? 0 : (i / (n - 1)) - 0.5;
+                        let a = facing + t * spread;
+                        let speed = 3 + Math.random() * 1.5;
+                        icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 260, radius: 7, tint: '#bfe8f5' });
+                    }
                     playSFX('ice_nova');
                 }
             },
@@ -3597,6 +3620,7 @@
             hexTiles = new Map(); landHexList = []; holeHexList = []; borderHexList = []; fences = [];
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.hazardTimer = 0; player.spikesTimer = 0;
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0;
+            player.lionChargeTimer = 0; player.lionDashTimer = 0;
             safeGridCache.clear();
             goalUnreachable = false; goalSeen = false;
             levelCoinsCollected = 0; levelCoinsPossible = 0;
@@ -6142,6 +6166,33 @@
                     // --- Mythic boss items: recurring attack-mimic procs (see updateMythicItems) ---
                     updateMythicItems();
 
+                    // --- Mythic: Sandstorm Mane (Lion) charge-dash. mythicItemEngine's
+                    // mythic_desertlion.proc only starts the wind-up (lionChargeTimer); once it
+                    // elapses this locks in a direction and launches an invincible dash
+                    // (lionDashTimer) that kills/damages anything it touches. Ticked every frame
+                    // regardless of proc timing, same convention as every other player timer here. ---
+                    if (player.lionChargeTimer > 0) {
+                        player.lionChargeTimer--;
+                        if (player.lionChargeTimer <= 0) {
+                            let dashAngle = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
+                            player.lionDashAngle = dashAngle;
+                            player.lionDashTimer = LION_DASH_FRAMES + (player.lionDashStacks || 1) * 2;
+                            player.invulnerableTimer = Math.max(player.invulnerableTimer || 0, (player.lionDashTimer / 60) + 0.15);
+                            screenShake = Math.max(screenShake, 8);
+                            playSFX('bull_charge');
+                        }
+                    }
+                    if (player.lionDashTimer > 0) {
+                        player.lionDashTimer--;
+                        player.worldX += Math.cos(player.lionDashAngle) * LION_DASH_SPEED;
+                        player.worldY += Math.sin(player.lionDashAngle) * LION_DASH_SPEED;
+                        player.vx = Math.cos(player.lionDashAngle) * LION_DASH_SPEED; player.vy = Math.sin(player.lionDashAngle) * LION_DASH_SPEED;
+                        for (let li = enemies.length - 1; li >= 0; li--) {
+                            let en = enemies[li];
+                            if (dist(player.worldX, player.worldY, en.x, en.y) < player.radius + en.radius) destroyEnemyByIndex(li, [2,4]);
+                        }
+                    }
+
                     // --- Roguelite: Shuriken item - orbiting blades that deflect bullets and kill enemies ---
                     let shurikenStacks = runItems.shuriken || 0;
                     if (shurikenStacks > 0) {
@@ -6449,6 +6500,16 @@
                             } else if (e.state === 'telegraph') {
                                 // Hold roughly in place, facing the player, while the tell plays.
                                 e.angle = Math.atan2(player.worldY - e.y, player.worldX - e.x);
+                                // Dash-type attacks (Sand Pounce, Avalanche Charge, Death Roll,
+                                // Snap Lunge, Charge Swipe) lock their charge direction on the
+                                // very first telegraph frame - rather than only deciding it the
+                                // instant the charge fires - so the warning line drawn below has
+                                // the whole telegraph window to read and dodge sideways instead
+                                // of the boss being able to correct its aim right up to the last
+                                // possible moment.
+                                if (e.currentAttack.dash && e.stateTimer === 0) {
+                                    e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x);
+                                }
                                 e.stateTimer++;
                                 if (e.stateTimer >= e.currentAttack.telegraph) {
                                     e.currentAttack.exec(e);
@@ -6551,6 +6612,11 @@
                     // to player.vx/vy every frame, so no separate cooldown bookkeeping is needed.
                     let spectreStacks = runItems.spectre || 0;
                     let spectreBoost = spectreStacks > 0 ? 1.06 + (spectreStacks - 1) * 0.03 : 0;
+                    // The Lion dash barrels straight through trees/fences the same way Spectre's
+                    // pass-through does below - it's a short invincible charge, getting shoved
+                    // sideways by a tree mid-dash would feel terrible and undercut the "kills
+                    // everything in your path" promise.
+                    let lionDashing = player.lionDashTimer > 0;
 
                     let nearTreesPlayer = getNearbyTrees(player.worldX, player.worldY);
                     for (let ti = 0; ti < nearTreesPlayer.length; ti++) {
@@ -6559,7 +6625,7 @@
                         let collisionDist = player.radius * 0.4 + t.radius * 0.5;
                         let distSq = dx*dx + dy*dy;
                         if (distSq < collisionDist*collisionDist) {
-                            if (spectreBoost > 0) { player.vx *= spectreBoost; player.vy *= spectreBoost; continue; }
+                            if (spectreBoost > 0 || lionDashing) { if (spectreBoost > 0) { player.vx *= spectreBoost; player.vy *= spectreBoost; } continue; }
                             let d = Math.sqrt(distSq);
                             let overlap = collisionDist - d; let angle = Math.atan2(dy, dx);
                             player.worldX += Math.cos(angle) * overlap; player.worldY += Math.sin(angle) * overlap; player.vx *= 0.6; player.vy *= 0.6;
@@ -6577,14 +6643,14 @@
                             else if (player.color === 'sparkle' && !t.blossomed) { t.blossomed = true; playSFX('coin', 0.5); }
                         }
                     }
-                    if (spectreBoost > 0) {
+                    if (spectreBoost > 0 || lionDashing) {
                         // Fences have no equivalent to getNearbyTrees' pre-filtered candidate
                         // list, so detect "would this fence have blocked me" the same way
                         // resolveFenceCollision itself would (its return only differs from the
                         // input when a push happened) rather than duplicating its internal grid
                         // lookup just to get a boolean.
                         let wouldPush = resolveFenceCollision(player.worldX, player.worldY, player.radius * 0.4, false);
-                        if (wouldPush.x !== player.worldX || wouldPush.y !== player.worldY) { player.vx *= spectreBoost; player.vy *= spectreBoost; }
+                        if (wouldPush.x !== player.worldX || wouldPush.y !== player.worldY) { if (spectreBoost > 0) { player.vx *= spectreBoost; player.vy *= spectreBoost; } }
                     } else {
                         let pushed = resolveFenceCollision(player.worldX, player.worldY, player.radius * 0.4, player.color === 'gold');
                         if (pushed.x !== player.worldX || pushed.y !== player.worldY) {
@@ -8203,6 +8269,36 @@
                 ctx.restore();
             }
 
+            // Boss dash-charge telegraphs: a warning line down the exact path a charging boss
+            // is about to dash along (Sand Pounce, Avalanche Charge, Death Roll, Snap Lunge,
+            // Charge Swipe - see the `dash` flag on their bossDB attack defs). The direction is
+            // locked in on the first telegraph frame (see the boss update loop above) rather
+            // than tracked live, so this line shows exactly where the charge will go with the
+            // full telegraph window to dodge sideways out of it.
+            let dashTelegraphBosses = enemies.filter(e => e.type === 'boss' && e.state === 'telegraph' && e.currentAttack && e.currentAttack.dash);
+            if (dashTelegraphBosses.length) {
+                ctx.save();
+                let isOnebit3 = player.color === 'onebit';
+                let blinkPhase3 = 0.5 + 0.5 * Math.sin(Date.now() / 70);
+                for (let i = 0; i < dashTelegraphBosses.length; i++) {
+                    let e = dashTelegraphBosses[i];
+                    let ex = e.x + tiltX, ey = e.y + tiltY;
+                    if (!isOnScreen(ex, ey, cullBuffer * 3)) continue;
+                    let progress = e.stateTimer / e.currentAttack.telegraph;
+                    let len = 900;
+                    let ex2 = ex + Math.cos(e.chargeAngle) * len, ey2 = ey + Math.sin(e.chargeAngle) * len;
+                    ctx.globalAlpha = 0.15 + 0.35 * blinkPhase3 * (0.3 + progress * 0.7);
+                    ctx.strokeStyle = isOnebit3 ? '#ffffff' : '#ff1e3c';
+                    ctx.lineWidth = e.radius * 0.55;
+                    ctx.lineCap = 'round';
+                    ctx.setLineDash([20, 16]);
+                    ctx.lineDashOffset = -Date.now() / 25;
+                    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex2, ey2); ctx.stroke();
+                }
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
             rqCount = 0;
             // PERF: was a full trees.length scan checking isOnScreen on every tree every frame
             // (100-300+ trees). Reuses the same treeGrid built for physics collision to narrow
@@ -8816,6 +8912,21 @@
                         ctx.fillStyle = '#fff6d0'; ctx.beginPath(); ctx.arc(0, 0, p.radius + 10 + shieldPulse, 0, Math.PI*2); ctx.fill();
                         ctx.restore();
                     }
+                    // Mythic: Sandstorm Mane (Lion) wind-up - a tightening, brightening ring so
+                    // the charge-up telegraphs clearly before the invincible dash actually fires
+                    // (the dash itself reuses the Wilkshirian shield aura above via
+                    // isPlayerInvulnerable, rather than needing its own separate effect).
+                    if (p.lionChargeTimer > 0) {
+                        ctx.save();
+                        ctx.translate(pdrawX, pdrawY);
+                        let progress = 1 - (p.lionChargeTimer / (p.lionChargeMax || 1));
+                        let ringR = p.radius + 34 - progress * 18;
+                        let pulse = Math.sin(Date.now()/45) * 4;
+                        ctx.globalAlpha = 0.35 + 0.45 * progress;
+                        ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 3 + progress * 3;
+                        ctx.beginPath(); ctx.arc(0, 0, ringR + pulse, 0, Math.PI*2); ctx.stroke();
+                        ctx.restore();
+                    }
                     if (p.activePowerup === 'lightning') {
                         let target = getLightningTargetWorld();
                         // Corrupted Data: the beam's actual kill-check is a capsule of radius
@@ -8992,6 +9103,7 @@
             splashes = []; leaves = []; screenShake = 0; hives = [];
             runItems = {}; bossItemsAwarded = {}; companions = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0; player.spectreBoostTimer = 0; player.mythicTimers = {};
+            player.lionChargeTimer = 0; player.lionDashTimer = 0;
             devilDealUsed = 0;
             iceFrostedTiles.clear();
             lavaScorchedTiles.clear(); fairyBloomTiles.clear(); goldenTiles.clear(); goldenHazardTiles.clear(); acidTrail = [];
