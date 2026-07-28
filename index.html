@@ -162,11 +162,75 @@
            between the title and the Continue button. Row layout mirrors the HUD's icon+text
            convention so it reads consistently with the rest of the UI. */
         #level-synopsis { display: flex; flex-direction: column; gap: 10px; margin: 15px 0; text-align: left; }
-        .level-stat-row { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 8px 12px; font-size: 0.65rem; }
+        /* Rows start invisible/collapsed - runLevelCompleteSequence() reveals them one at a
+           time via the .slam class below, rather than all three appearing at once. */
+        .level-stat-row { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 8px 12px; font-size: 0.65rem; opacity: 0; transform: scale(0.3) translateY(-18px); }
+        .level-stat-row.slam { animation: statRowSlam 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+        @keyframes statRowSlam {
+            0% { opacity: 0; transform: scale(2.1) translateY(-26px); }
+            50% { opacity: 1; transform: scale(0.92) translateY(4px); }
+            75% { transform: scale(1.06) translateY(-2px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
         .level-stat-icon { width: 20px; height: 20px; flex-shrink: 0; text-align: center; }
         .level-stat-emoji { font-size: 1rem; line-height: 1; }
         .level-stat-label { flex: 1; }
         .level-stat-value { color: #ffcf33; font-weight: bold; }
+
+        /* Letter-grade rosette: a color-coded award-ribbon medallion (pleated sunburst edge +
+           two hanging tails) that slams into place near #level-modal's top-right corner once the
+           level score (coins 40% / enemies 30% / chest 30%) is tallied, at the end of
+           runLevelCompleteSequence(). Lives OUTSIDE #level-modal (appended to <body> - see HTML)
+           specifically so it isn't clipped by the modal's own overflow:hidden, since it's meant
+           to poke slightly past the modal's edge. position:fixed and its left/top are set from
+           JS (positionGradeBadge()) using the modal's live bounding rect, anchored so the
+           rosette's own center - not its top-left corner - lands at the target point; see
+           transform-origin below, which is what keeps that anchor point fixed on screen through
+           the rotate/scale of the slam animation and its resting askew tilt.
+           No boxed background of any kind here - the ribbon shapes below ARE the only color. */
+        #level-grade-badge { position: fixed; width: 112px; height: 178px; transform-origin: 56px 56px; opacity: 0; z-index: 70; pointer-events: none; }
+        #level-grade-badge.grade-f { --grade-c1: #ff9d9d; --grade-c2: #b71c1c; }
+        #level-grade-badge.grade-d { --grade-c1: #ffc199; --grade-c2: #d35400; }
+        #level-grade-badge.grade-c { --grade-c1: #fff3a0; --grade-c2: #e6a800; }
+        #level-grade-badge.grade-b { --grade-c1: #b9f6ca; --grade-c2: #2e7d32; }
+        #level-grade-badge.grade-a { --grade-c1: #b3e5fc; --grade-c2: #0277bd; }
+        #level-grade-badge.grade-aplus { --grade-c1: #eecbff; --grade-c2: #6a1b9a; }
+        #level-grade-badge.slam { animation: gradeSlam 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+        @keyframes gradeSlam {
+            0% { opacity: 0; transform: scale(2.8) rotate(30deg); }
+            55% { opacity: 1; transform: scale(0.8) rotate(-18deg); }
+            75% { transform: scale(1.1) rotate(-5deg); }
+            100% { opacity: 1; transform: scale(1) rotate(-9deg); }
+        }
+        /* Pleated sunburst rim: alternating wedges of the grade's two shades, standing in for a
+           ribbon's stitched pleats. Sits behind the plain medallion face so only its rim shows.
+           clip-path traces a 48-point circle whose radius alternates by ~2.7px, giving the
+           rim a lightly crinkle/pinked-cut outer edge (like pinking shears on real ribbon)
+           instead of a perfectly smooth circle. */
+        .rosette-pleats { position: absolute; top: 6px; left: 6px; width: 100px; height: 100px; border-radius: 50%; background: repeating-conic-gradient(var(--grade-c1) 0deg 9deg, var(--grade-c2) 9deg 18deg); box-shadow: 0 6px 12px rgba(0,0,0,0.5); clip-path: polygon(50.00% 0.00%, 56.17% 3.10%, 62.94% 1.70%, 68.10% 6.30%, 75.00% 6.70%, 78.79% 12.47%, 85.36% 14.64%, 87.53% 21.21%, 93.30% 25.00%, 93.70% 31.90%, 98.30% 37.06%, 96.90% 43.83%, 100.00% 50.00%, 96.90% 56.17%, 98.30% 62.94%, 93.70% 68.10%, 93.30% 75.00%, 87.53% 78.79%, 85.36% 85.36%, 78.79% 87.53%, 75.00% 93.30%, 68.10% 93.70%, 62.94% 98.30%, 56.17% 96.90%, 50.00% 100.00%, 43.83% 96.90%, 37.06% 98.30%, 31.90% 93.70%, 25.00% 93.30%, 21.21% 87.53%, 14.64% 85.36%, 12.47% 78.79%, 6.70% 75.00%, 6.30% 68.10%, 1.70% 62.94%, 3.10% 56.17%, 0.00% 50.00%, 3.10% 43.83%, 1.70% 37.06%, 6.30% 31.90%, 6.70% 25.00%, 12.47% 21.21%, 14.64% 14.64%, 21.21% 12.47%, 25.00% 6.70%, 31.90% 6.30%, 37.06% 1.70%, 43.83% 3.10%); }
+        /* Medallion face: a plain glossy dome so the letter reads clearly against the busier
+           pleated rim behind it. Sized close to the pleats so the grade letter fills most of
+           the medal rather than floating in a lot of empty dome. */
+        .rosette-medal { position: absolute; top: 14px; left: 14px; width: 84px; height: 84px; border-radius: 50%; background: radial-gradient(circle at 35% 28%, var(--grade-c1), var(--grade-c2) 78%); border: 3px solid rgba(255,255,255,0.9); box-shadow: inset 0 -5px 10px rgba(0,0,0,0.28), inset 0 3px 6px rgba(255,255,255,0.3); }
+        /* Two thick ribbon tails hanging below the medallion, cut with a W notch at the bottom
+           (two forked points either side of a center point) rather than a single V - the
+           classic fuller rosette-ribbon silhouette. The extra background layer is a faint
+           lighter/darker edge stripe standing in for a ribbon's folded crease, so the tail
+           reads as cloth rather than a flat color swatch. Rotated so each tail's free end
+           swings AWAY from the badge's centerline (outward flare) rather than crossing back
+           toward it - see transform-origin: top center, which keeps each tail's top end
+           pinned under the medal while only the bottom end swings out. */
+        .rosette-tail {
+            position: absolute; top: 76px; width: 34px; height: 88px;
+            background:
+                linear-gradient(90deg, rgba(0,0,0,0.18) 0%, rgba(255,255,255,0.22) 12%, transparent 30%, transparent 70%, rgba(0,0,0,0.22) 100%),
+                linear-gradient(var(--grade-c2), var(--grade-c1));
+            clip-path: polygon(0 0, 100% 0, 100% 100%, 72% 64%, 50% 100%, 28% 64%, 0 100%);
+            box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.15);
+        }
+        .rosette-tail-l { left: 21px; transform: rotate(8deg); transform-origin: top center; }
+        .rosette-tail-r { left: 57px; transform: rotate(-8deg); transform-origin: top center; }
+        #level-grade-letter { position: absolute; top: 56px; left: 56px; transform: translate(-50%, -50%); font-size: 2.5rem; font-weight: bold; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.55), 0 0 10px rgba(0,0,0,0.3); line-height: 1; }
         /* Items-won section is hidden by default (most levels grant zero run items) and only
            switched on by showLevelCompleteSynopsis() when levelItemsWon actually has entries -
            typically true for a Survive stage, whose two flanking chests (see updateSurvivalMode)
@@ -181,7 +245,20 @@
            modals, so player dragging is disabled without needing any extra input guarding. */
         #fishing-dialogue { display: none; position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: calc(100% - 48px); max-width: 460px; background: rgba(10, 15, 20, 0.88); border: 3px solid #fff; border-radius: 10px; padding: 16px 20px; z-index: 60; box-shadow: 0 8px 0 rgba(0,0,0,0.35); cursor: pointer; }
         #fishing-dialogue-text { color: #fff; font-size: 0.62rem; line-height: 1.9; white-space: pre-wrap; }
-        #fishing-dialogue-hint { display: block; text-align: right; margin-top: 10px; font-size: 0.5rem; color: rgba(255,255,255,0.65); animation: pulse 1s infinite; }
+        #fishing-dialogue-hint, #story-ending-dialogue-hint { display: block; text-align: right; margin-top: 10px; font-size: 0.5rem; color: rgba(255,255,255,0.65); animation: pulse 1s infinite; }
+
+        /* Story-ending textbox: the final zoomed-out epilogue that plays once the fishing-scene
+           story runs out. Same two-tap read/advance convention as #fishing-dialogue above, but
+           centered on screen rather than docked to the bottom, to set it apart as the story's
+           closing beat rather than another ordinary encounter. */
+        #story-ending-dialogue { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: calc(100% - 48px); max-width: 460px; background: rgba(10, 15, 20, 0.88); border: 3px solid #fff; border-radius: 10px; padding: 16px 20px; z-index: 65; box-shadow: 0 8px 0 rgba(0,0,0,0.35); cursor: pointer; text-align: center; }
+        #story-ending-dialogue-text { color: #fff; font-size: 0.62rem; line-height: 1.9; white-space: pre-wrap; }
+
+        /* Full-screen overlay used to flicker/blackout the stage: a brief flicker (then back to
+           transparent) when re-visiting the man and boy after the story's ended, or a flicker
+           that resolves to full black right before the story-ending game over. Starts fully
+           transparent and non-interactive so it never blocks input outside of these moments. */
+        #story-blackout { display: block; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; opacity: 0; pointer-events: none; z-index: 62; }
 
         @keyframes unlockAnim {
             0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
@@ -299,6 +376,10 @@
            localStorage state, not anything expressible in CSS. */
         .notif-dot { position: absolute; top: -4px; right: -4px; width: 12px; height: 12px; background: #ff2222; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.6); display: none; z-index: 3; pointer-events: none; }
         .notif-dot.show { display: block; }
+        /* Main-screen Almanac corner icon only (not the in-modal tab dots, which share
+           .notif-dot's default position/size) - sized up slightly and pulled inward so it
+           actually overlaps the icon's edge instead of floating just outside it. */
+        #almanac-corner-dot { width: 16px; height: 16px; top: 1px; right: 1px; }
         .gacha-container { position: relative; text-align: center; padding: 10px; display: flex; flex-direction: column; align-items: center; }
         
         .gacha-machine { 
@@ -364,7 +445,7 @@
         .gacha-ten-new-badge { position: absolute; top: 3px; right: 3px; background: #ff477e; color: #fff; font-size: 0.45rem; padding: 2px 4px; border-radius: 6px; font-weight: bold; box-shadow: 0 2px 3px rgba(0,0,0,0.4); z-index: 2; }
         .gacha-ten-hint { font-size: 0.65rem; color: #bdc3c7; text-align: center; }
         
-        .shop-coin-bag { margin: 4px auto 0 auto; padding: 6px 18px; background: linear-gradient(135deg, #2c3e50, #34495e); border: 2px solid #f1c40f; border-radius: 20px; display: inline-flex; align-items: center; gap: 5px; color: #f1c40f; font-weight: bold; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .shop-coin-bag { margin: 14px auto 0 auto; padding: 6px 18px; background: linear-gradient(135deg, #2c3e50, #34495e); border: 2px solid #f1c40f; border-radius: 20px; display: inline-flex; align-items: center; gap: 5px; color: #f1c40f; font-weight: bold; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         
         #gacha-reveal-overlay { 
             display: none; 
@@ -478,6 +559,8 @@
     <div id="secret-unlock-toast"><span class="glitch-title">// GLITCH DETECTED //</span>CORRUPTED DATA slime unlocked!<br>Equip it in the Skins shop.</div>
 
     <div id="fishing-dialogue"><span id="fishing-dialogue-text"></span><span id="fishing-dialogue-hint">tap to continue</span></div>
+    <div id="story-ending-dialogue"><span id="story-ending-dialogue-text"></span><span id="story-ending-dialogue-hint">tap to continue</span></div>
+    <div id="story-blackout"></div>
 
     <button id="settings-corner-btn" class="corner-icon"><img class="icon-img" id="settings-icon-img" style="width:1.6rem;height:1.6rem;" alt=""></button>
     <button id="almanac-corner-btn" class="corner-icon"><img class="icon-img" id="almanac-icon-img" style="width:1.6rem;height:1.6rem;" alt=""><span class="notif-dot" id="almanac-corner-dot"></span></button>
@@ -616,15 +699,26 @@
     <div id="level-modal" class="modal">
         <h2 id="level-title">Level Complete!</h2>
         <div id="level-synopsis">
-            <div class="level-stat-row"><img class="icon-img level-stat-icon" id="level-stat-coin-icon" alt=""><span class="level-stat-label">Coins</span><span id="level-stat-coins" class="level-stat-value">0/0</span></div>
-            <div class="level-stat-row"><span class="level-stat-icon level-stat-emoji">⚔️</span><span class="level-stat-label">Enemies</span><span id="level-stat-enemies" class="level-stat-value">0/0</span></div>
-            <div class="level-stat-row"><span class="level-stat-icon level-stat-emoji">🎁</span><span class="level-stat-label">Chest</span><span id="level-stat-chest" class="level-stat-value">0/0</span></div>
+            <div id="level-stat-row-coins" class="level-stat-row"><img class="icon-img level-stat-icon" id="level-stat-coin-icon" alt=""><span class="level-stat-label">Coins</span><span id="level-stat-coins" class="level-stat-value">0/0</span></div>
+            <div id="level-stat-row-enemies" class="level-stat-row"><span class="level-stat-icon level-stat-emoji">⚔️</span><span class="level-stat-label">Enemies</span><span id="level-stat-enemies" class="level-stat-value">0/0</span></div>
+            <div id="level-stat-row-chest" class="level-stat-row"><span class="level-stat-icon level-stat-emoji">🎁</span><span class="level-stat-label">Chest</span><span id="level-stat-chest" class="level-stat-value">0/0</span></div>
         </div>
         <div id="level-items-won-section">
             <div id="level-items-won-label">Items Won</div>
             <div id="level-items-won"></div>
         </div>
         <button id="level-continue-btn">Continue</button>
+    </div>
+
+    <!-- Deliberately NOT nested inside #level-modal: the modal clips its own content
+         (overflow:hidden) so it can scroll, but this rosette is meant to slam in slightly
+         outside the modal's edge, askew - see positionGradeBadge()/#level-grade-badge CSS. -->
+    <div id="level-grade-badge">
+        <div class="rosette-tail rosette-tail-l"></div>
+        <div class="rosette-tail rosette-tail-r"></div>
+        <div class="rosette-pleats"></div>
+        <div class="rosette-medal"></div>
+        <span id="level-grade-letter"></span>
     </div>
 
     <script src="sprites/wanderer.js"></script>
@@ -1054,6 +1148,10 @@
         let levelEnemiesSpawned = 0;
         let levelChestOpened = 0;
         let levelChestPossible = 0;
+        // Skeleton Key bonus chests are tracked separately from levelChestOpened/Possible above:
+        // they show up added on top of the regular chest count on the level-complete screen
+        // (e.g. "2/1") but never affect the chest % that feeds into the level grade.
+        let levelSkeletonChestOpened = 0;
         let levelItemsWon = []; // roguelike item ids granted this level, shown on the level-complete screen
 
         // ---- Rare "Survival" level type ----
@@ -1248,6 +1346,11 @@
         // only purchasable once before the trader has to be re-encountered on a later level.
         let skinTrader = null;
         let goldTrader = null;
+        // Purely aesthetic wooden piers, occasionally placed jutting out over a large hazard
+        // pool's edge (see spawnHazardDocks below). No collision, no interaction - just set
+        // dressing that reads as "someone built a dock here", the same visual-only role
+        // decorations play for grass tufts.
+        let docks = [];
         // {kind: 'skin'|'gold', trader} for whichever trader modal is currently open - read by
         // renderMerchantItems/buyMerchantItem so they don't need the trigger site to keep
         // passing state through every call.
@@ -1316,6 +1419,12 @@
             { id: 'level3',          name: 'First Steps',        desc: 'Reach Level 3.',                              icon: 'ach_footprint',    check: () => highestLevel >= 3 },
             { id: 'level10',         name: 'Deep Dive',          desc: 'Reach Level 10.',                             icon: 'ach_medal_silver', check: () => highestLevel >= 10 },
             { id: 'level20',         name: 'Rimaru Tempest',     desc: 'Reach Level 20.',                             icon: 'ach_dragon',       check: () => highestLevel >= 20 },
+            // classicAplusEver/endlessAplusEver are set once, the moment revealLevelGrade()
+            // ever computes an A+ while gameMode is 'classic'/'endless' respectively - see the
+            // grade === 'A+' branch there. Kept as separate flags (rather than deriving from
+            // some other stat) since "ever got A+ in mode X" isn't otherwise recoverable from
+            // persisted state the way a high-water mark like highestLevel is.
+            { id: 'model_student',   name: 'Model Student',      desc: 'Get an A+ grade on a level in Classic mode.', icon: 'ach_model_student', check: () => storage.get('classicAplusEver') === 'true' },
             { id: 'bug_hunter',      name: 'Bug Hunter',         desc: 'Encounter 3 different enemies.',              icon: 'ach_bug',          check: () => Object.keys(enemyDB).filter(k => storage.get('almanac_' + k) === 'true').length >= 3 },
             { id: 'bestiary',        name: 'Bestiary Complete',  desc: 'Encounter every enemy in the game.',          icon: 'ach_bestiary',     check: () => Object.keys(enemyDB).every(k => storage.get('almanac_' + k) === 'true') },
             { id: 'centurion',       name: 'Centurion',          desc: 'Defeat 100 enemies.',                         icon: 'ach_helmet',       check: () => (parseInt(storage.get('totalEnemyKills')) || 0) >= 100 },
@@ -1327,7 +1436,7 @@
             { id: 'rare_collector',  name: 'Rare Collector',     desc: 'Unlock all 10 rare skins.',                   icon: 'ach_gem',          check: () => rareSkins.every(s => parseInt(storage.get('inv_' + s.id) || 0) > 0) },
             { id: 'hatalogue',       name: 'Hatalogue',          desc: 'Unlock all 10 hats.',                         icon: 'ach_hatalogue',    check: () => hats.every(h => parseInt(storage.get('inv_' + h.id) || 0) > 0) },
             { id: 'glitch_hunter',   name: 'Glitch Hunter',      desc: 'Discover the secret Corrupted Data skin.',    icon: 'ach_glitchbadge',  check: () => parseInt(storage.get('inv_corrupted') || 0) > 0 },
-            { id: 'story_complete',  name: 'The Whole Story',    desc: 'Read through the entire fishing-scene story.', icon: 'ach_scroll',      check: () => (parseInt(storage.get('landSlidersStorySeen')) || 0) >= fishingStorySentences.length },
+            { id: 'story_complete',  name: 'The Whole Story',    desc: 'Read through the entire fishing-scene story.', icon: 'ach_scroll',      check: () => storage.get('landSlidersStoryComplete') === 'true' },
             // Unlike every other entry here, this can't be phrased as a check() against
             // persisted stats - it depends on the specific level the player died on (goal
             // fenced off entirely) plus having actually seen that goal before dying. Both are
@@ -1341,6 +1450,7 @@
             { id: 'endless_level3',  name: 'Wave Rider',         desc: 'Reach Level 3 in Endless Waves.',             icon: 'ach_wave_small',   check: () => bestEndlessLevel >= 3 },
             { id: 'endless_level6',  name: 'Wave Breaker',       desc: 'Reach Level 6 in Endless Waves.',             icon: 'ach_wave_medium',  check: () => bestEndlessLevel >= 6 },
             { id: 'endless_level9',  name: 'Wave Master',        desc: 'Reach Level 9 in Endless Waves.',             icon: 'ach_wave_large',   check: () => bestEndlessLevel >= 9 },
+            { id: 'perfectionist',   name: 'Perfectionist',      desc: 'Get an A+ grade on a level in Endless Waves.', icon: 'ach_perfectionist', check: () => storage.get('endlessAplusEver') === 'true' },
             // Checked against the live in-memory balance rather than a persisted high-water
             // mark, matching "hoard" - the achievement fires the moment the player is actually
             // sitting on 50,000 coins at once, not merely on having earned that much lifetime.
@@ -1492,12 +1602,42 @@
             "The boy sat with a man he did not recognize, fishing in a lake that was made of glass with stars above that did not seem quite right.",
             "But nothing seemed amiss."
         ];
-        let fishingStoryIndex = parseInt(storage.get('landSlidersFishingIndex')) || 0;
-        if (!Number.isFinite(fishingStoryIndex) || fishingStoryIndex < 0 || fishingStoryIndex >= fishingStorySentences.length) fishingStoryIndex = 0;
+        // TEST BUILD OVERRIDE: force the story to start one pair from the end regardless of
+        // saved progress, so the very next man-and-boy encounter (level 1 always spawns one -
+        // see spawnChance above) goes straight into the final dialogue pair, the story-ending
+        // epilogue, the flicker/buzz, and the black game-over screen. Remove this override line
+        // to go back to normal save-driven progress.
+        let fishingStoryIndex = fishingStorySentences.length - 2;
+        storage.set('landSlidersStoryComplete', 'false');
+        // fishingStoryIndex === fishingStorySentences.length is a valid, deliberate state (the
+        // story has been fully read and shouldn't wrap back to the start on reload) - only
+        // out-of-range or corrupt values get reset to 0.
+        if (!Number.isFinite(fishingStoryIndex) || fishingStoryIndex < 0 || fishingStoryIndex > fishingStorySentences.length) fishingStoryIndex = 0;
         // The pair of sentences currently on screen, and which of the two (0 or 1) is showing -
         // null when the dialogue box is closed.
         let fishingDialogueSentences = null;
         let fishingDialogueStep = 0;
+        // True while fishingDialogueSentences holds the story's last pair (see
+        // triggerFishingDialogue) - on close, that pair hands off to the story-ending epilogue
+        // below instead of just resuming the game like every earlier pair does.
+        let fishingDialogueIsFinal = false;
+        // True while fishingDialogueSentences is being reused to replay the closing pair as
+        // flavor text (see triggerStoryCompleteFlavor) after the story's already been finished -
+        // on close this triggers a brief flicker instead of the epilogue or an instant resume.
+        let fishingFlavorReplay = false;
+
+        // The zoomed-out epilogue that plays once the fishing-scene story (above) has been read
+        // all the way through. Shown one segment at a time in #story-ending-dialogue (see
+        // triggerStoryEnding/advanceStoryEnding), centered on screen rather than docked to the
+        // bottom to mark it as the story's closing beat. Finishing the last segment unlocks the
+        // 'story_complete' achievement and ends the run - see advanceStoryEnding.
+        const storyEndingSegments = [
+            "A widened perspective would first reveal a dilapidated, very old house with three skeletons held together by clay, sitting in a room, and the carcasses of two dogs laying directly outside, where they had pawed to be let in for 35 days before succumbing to hunger and consuming one another, though this event took place long ago.",
+            "Go even farther out and you would notice a glass serving dish’s round top, covering the house in an effort to preserve what was inside.",
+            "The next level out would reveal a glass prism like container holding everything else, though the prism was two prisms, one with the top facing up, and the other with the top facing down, balancing perfectly on top of one of the tips of the prisms, though it was unnecessary, as it was inside of a vacuum, with a glass sphere sealing the vacuum a level higher.",
+            "Finally you would see that hundreds of thousands of similar tiny spheres filled up a sand hourglass on the desk of a man you would describe as \"eccentric.\"\nAnd all of this was as it is written, for that is how it must be, and has always been."
+        ];
+        let storyEndingIndex = 0;
 
         // Configurations
         // Regular stage themes now live one-per-file in themes/ (forest.js, desert.js,
@@ -1620,6 +1760,19 @@
         let musicDangerActive = false;
         let dangerFadeToken = 0; // bumped on every setMusicDanger() call; lets a delayed pause() no-op if re-triggered mid-fade
 
+        // Set the instant the story-ending flicker fires (see advanceStoryEnding) so the music
+        // cuts out immediately and - unlike a normal pause - stays silent through every other
+        // screen (game over, almanac, settings) instead of getting auto-resumed by initAudio()
+        // or a visibility-change resume. Only a fresh playMusicTrack() (i.e. actually starting a
+        // new run via Play Again) clears it, per spec: music shouldn't come back until then.
+        let musicStoppedForStory = false;
+        function stopMusicForStoryEnding() {
+            musicStoppedForStory = true;
+            if (!audioGraphReady) return;
+            musicPlayerNormal.pause();
+            musicPlayerFast.pause();
+        }
+
         const musicPlayerNormal = new Audio();
         musicPlayerNormal.loop = true;
         musicPlayerNormal.preload = 'auto';
@@ -1665,12 +1818,14 @@
         // once initAudio() unlocks things on the first tap.
         function playMusicTrack(idx) {
             currentTrack = idx;
+            stopLightbulbBuzz();
             musicPlayerNormal.src = musicFiles[idx];
             musicPlayerFast.src = musicFilesDanger[idx];
             musicPlayerNormal.currentTime = 0;
             musicPlayerFast.currentTime = 0;
             musicDangerActive = false;
             musicSped = false;
+            musicStoppedForStory = false;
             dangerFadeToken++;
             if (audioGraphReady) {
                 let now = actx.currentTime;
@@ -1720,6 +1875,7 @@
                 playMusicTrack(currentTrack);
             }
             if (actx.state === 'suspended') actx.resume();
+            if (musicStoppedForStory) return;
             if (musicPlayerNormal.paused) musicPlayerNormal.play().catch(() => {});
             if (musicDangerActive && musicPlayerFast.paused) musicPlayerFast.play().catch(() => {});
         }
@@ -1735,7 +1891,7 @@
             if (actx.state === 'running') actx.suspend();
         }
         function resumeMusicForVisibility() {
-            if (!audioGraphReady || !musicWasPlayingBeforeHidden) return;
+            if (!audioGraphReady || !musicWasPlayingBeforeHidden || musicStoppedForStory) return;
             if (actx.state === 'suspended') actx.resume();
             musicPlayerNormal.play().catch(() => {});
             if (musicDangerActive) musicPlayerFast.play().catch(() => {});
@@ -1792,7 +1948,114 @@
                 osc.frequency.setValueAtTime(200, t + 0.22); osc.frequency.exponentialRampToValueAtTime(1600, t + 0.5);
                 gain.gain.setValueAtTime(userSettings.sfxVol * 0.5, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.55);
                 osc.start(t); osc.stop(t + 0.55);
+            } else if (type === 'bull_windup') {
+                // Low anticipatory snort the Bull gives right before it charges - quiet and
+                // short so it reads as a tell to react to, not a jump-scare.
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(90, t); osc.frequency.linearRampToValueAtTime(135, t + 0.12);
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.22, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.15);
+                osc.start(t); osc.stop(t + 0.15);
+            } else if (type === 'bull_charge') {
+                // Low stomping whoosh the instant the Bull actually launches into its dash.
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(180, t); osc.frequency.exponentialRampToValueAtTime(60, t + 0.25);
+                let osc2 = actx.createOscillator(); osc2.type = 'square'; osc2.frequency.setValueAtTime(50, t); osc2.frequency.exponentialRampToValueAtTime(28, t + 0.2);
+                let gain2 = actx.createGain(); gain2.gain.setValueAtTime(userSettings.sfxVol * 0.22, t); gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+                osc2.connect(gain2); gain2.connect(actx.destination); osc2.start(t); osc2.stop(t + 0.2);
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.3, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.25);
+                osc.start(t); osc.stop(t + 0.25);
+            } else if (type === 'eye_windup') {
+                // Rising charge-up tone as the Evil Eye winds up its next plasma orb.
+                osc.type = 'sine'; osc.frequency.setValueAtTime(300, t); osc.frequency.exponentialRampToValueAtTime(700, t + 0.3);
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.16, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.3);
+                osc.start(t); osc.stop(t + 0.3);
+            } else if (type === 'eye_fire') {
+                // Quick descending zap the instant the Evil Eye actually fires.
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(900, t); osc.frequency.exponentialRampToValueAtTime(200, t + 0.12);
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.28, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+                osc.start(t); osc.stop(t + 0.12);
+            } else if (type === 'shop_yoohoo') {
+                // Muffled, higher-pitched two-note "yoo-hoo" greeting when a shop first scrolls
+                // into view. Routed through a lowpass filter (unlike every other SFX here) so
+                // it sounds distant/friendly rather than sharp, and kept quiet/short to stay
+                // non-intrusive - synced with the shopkeeper slime's two mouth-open squishes in
+                // drawTraderStall.
+                let yhFilter = actx.createBiquadFilter(); yhFilter.type = 'lowpass'; yhFilter.frequency.value = 1200;
+                osc.disconnect(); osc.connect(yhFilter); yhFilter.connect(gain);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(700, t); osc.frequency.setValueAtTime(920, t + 0.14);
+                osc.frequency.setValueAtTime(600, t + 0.28); osc.frequency.setValueAtTime(780, t + 0.4);
+                gain.gain.setValueAtTime(0.0001, t);
+                gain.gain.linearRampToValueAtTime(userSettings.sfxVol * 0.2, t + 0.03);
+                gain.gain.linearRampToValueAtTime(userSettings.sfxVol * 0.05, t + 0.15);
+                gain.gain.linearRampToValueAtTime(userSettings.sfxVol * 0.2, t + 0.29);
+                gain.gain.linearRampToValueAtTime(0.0001, t + 0.55);
+                osc.start(t); osc.stop(t + 0.55);
+            } else if (type === 'stat_slam') {
+                // Punchy thud+ding for each coin/enemy/chest row slamming into place on the
+                // level-complete screen (see slamStatRow).
+                osc.type = 'square'; osc.frequency.setValueAtTime(180, t); osc.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.45, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.09);
+                osc.start(t); osc.stop(t + 0.09);
+                let slamOsc = actx.createOscillator(); slamOsc.type = 'triangle'; slamOsc.frequency.setValueAtTime(900, t + 0.03); slamOsc.frequency.exponentialRampToValueAtTime(1300, t + 0.12);
+                let slamGain = actx.createGain(); slamGain.gain.setValueAtTime(userSettings.sfxVol * 0.3, t + 0.03); slamGain.gain.exponentialRampToValueAtTime(0.01, t + 0.14);
+                slamOsc.connect(slamGain); slamGain.connect(actx.destination); slamOsc.start(t + 0.03); slamOsc.stop(t + 0.14);
+            } else if (type === 'grade_reveal') {
+                // Triumphant thud + rising four-note arpeggio as the letter-grade badge slams
+                // into the level-complete screen's top-right corner (see revealLevelGrade).
+                osc.type = 'square'; osc.frequency.setValueAtTime(120, t); osc.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.4, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+                osc.start(t); osc.stop(t + 0.1);
+                let notes = [523.25, 659.25, 783.99, 1046.5];
+                notes.forEach((freq, i) => {
+                    let nOsc = actx.createOscillator(); nOsc.type = 'triangle'; nOsc.frequency.setValueAtTime(freq, t + i * 0.06);
+                    let nGain = actx.createGain(); nGain.gain.setValueAtTime(userSettings.sfxVol * 0.35, t + i * 0.06); nGain.gain.exponentialRampToValueAtTime(0.01, t + i * 0.06 + 0.15);
+                    nOsc.connect(nGain); nGain.connect(actx.destination); nOsc.start(t + i * 0.06); nOsc.stop(t + i * 0.06 + 0.15);
+                });
             }
+        }
+
+        // Continuous "dying lightbulb" buzz used by stageFlicker (see below), matching the
+        // reference recording: a single steady ~120Hz sawtooth hum (the classic mains-buzz
+        // pitch) that ramps in rather than a series of separate blips - not a cluster of
+        // short, differently-pitched bursts, which is what read as a "kazoo" before.
+        // sustain=true keeps it looping indefinitely (the story-ending flicker, held through
+        // the black game-over screen until Play Again restarts music - see startGame/
+        // playMusicTrack); sustain=false lets it fade itself out shortly after (the brief
+        // man-and-boy revisit flicker, which resumes normal play rather than ending the run).
+        let lightbulbBuzzOsc = null, lightbulbBuzzGain = null;
+        function startLightbulbBuzz(sustain) {
+            if (!actx || userSettings.sfxVol <= 0) return;
+            stopLightbulbBuzz();
+            let t = actx.currentTime;
+            let osc = actx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(120, t);
+            let gain = actx.createGain();
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.exponentialRampToValueAtTime(userSettings.sfxVol * 0.32, t + 0.35);
+            osc.connect(gain); gain.connect(actx.destination);
+            osc.start(t);
+            lightbulbBuzzOsc = osc; lightbulbBuzzGain = gain;
+            if (!sustain) {
+                gain.gain.setValueAtTime(userSettings.sfxVol * 0.32, t + 0.5);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+                osc.stop(t + 0.9);
+                setTimeout(() => { if (lightbulbBuzzOsc === osc) { lightbulbBuzzOsc = null; lightbulbBuzzGain = null; } }, 950);
+            }
+        }
+        // Fades out and stops any currently-running buzz - called once a new run actually
+        // starts (see playMusicTrack) so a sustained (story-ending) buzz doesn't keep looping
+        // past the point the player hits Play Again.
+        function stopLightbulbBuzz() {
+            if (!lightbulbBuzzOsc) return;
+            let osc = lightbulbBuzzOsc, gain = lightbulbBuzzGain;
+            lightbulbBuzzOsc = null; lightbulbBuzzGain = null;
+            try {
+                let now = actx.currentTime;
+                gain.gain.cancelScheduledValues(now);
+                gain.gain.setValueAtTime(gain.gain.value, now);
+                gain.gain.linearRampToValueAtTime(0.0001, now + 0.15);
+                osc.stop(now + 0.2);
+            } catch (e) {}
         }
 
         function manageBeeBuzzing() {
@@ -1954,6 +2217,55 @@
         }
 
         // ---- Hand-drawn pixel-icon sprites (replaces all emoji) ----
+        // Shared drawer for the Model Student / Perfectionist achievement badges: a miniature
+        // version of the #level-grade-badge rosette (pleated rim + medal + two small ribbon
+        // tails + "A+"), rather than a generic star/medal. c1/c2 are that achievement's two
+        // grade-rosette accent colors; everything else (the pleat divider ring, tail trim, and
+        // the outer backing ring behind the pleats) stays a consistent gold, since every other
+        // achievement badge in the game reads as a solid gold medal and this should still read
+        // as one of those first, with the rosette colors as an accent rather than replacing the
+        // gold entirely.
+        function drawRosetteAchievementIcon(tctx, s, c1, c2) {
+            const gold1 = '#ffe27a', gold2 = '#c77000';
+            // Solid gold backing disc, slightly larger than the pleats, standing in for a medal's
+            // rim - this is what keeps the badge reading as "gold medal" at a glance.
+            tctx.fillStyle = gold2; tctx.beginPath(); tctx.arc(0, 0, 10.5 * s, 0, Math.PI * 2); tctx.fill();
+            tctx.fillStyle = gold1; tctx.beginPath(); tctx.arc(0, 0, 10 * s, 0, Math.PI * 2); tctx.fill();
+            // Pleated sunburst rim: alternating grade-colored wedges over the gold backing.
+            const wedges = 10;
+            for (let i = 0; i < wedges; i++) {
+                let a0 = (Math.PI * 2 / wedges) * i, a1 = (Math.PI * 2 / wedges) * (i + 1);
+                tctx.fillStyle = i % 2 === 0 ? c1 : c2;
+                tctx.beginPath(); tctx.moveTo(0, 0); tctx.arc(0, 0, 9 * s, a0, a1); tctx.closePath(); tctx.fill();
+            }
+            // Two small ribbon tails hanging below, flared outward like the level-complete
+            // rosette, trimmed in gold to tie back into the medal rim.
+            [-1, 1].forEach(side => {
+                tctx.save();
+                tctx.translate(side * 2.4 * s, 6.5 * s);
+                tctx.rotate(side * 0.3);
+                tctx.fillStyle = c2;
+                tctx.beginPath();
+                tctx.moveTo(-1.5 * s, 0); tctx.lineTo(1.5 * s, 0);
+                tctx.lineTo(1.5 * s, 4 * s); tctx.lineTo(0.7 * s, 3 * s); tctx.lineTo(0, 4 * s);
+                tctx.lineTo(-0.7 * s, 3 * s); tctx.lineTo(-1.5 * s, 4 * s);
+                tctx.closePath(); tctx.fill();
+                tctx.strokeStyle = gold1; tctx.lineWidth = 0.5 * s; tctx.stroke();
+                tctx.restore();
+            });
+            // Medal face + gold rim, letter last so it sits above everything.
+            let grad = tctx.createRadialGradient(-2 * s, -2.5 * s, 1 * s, 0, 0, 6.5 * s);
+            grad.addColorStop(0, c1); grad.addColorStop(1, c2);
+            tctx.fillStyle = grad;
+            tctx.beginPath(); tctx.arc(0, 0, 6.5 * s, 0, Math.PI * 2); tctx.fill();
+            tctx.strokeStyle = gold1; tctx.lineWidth = 1 * s; tctx.beginPath(); tctx.arc(0, 0, 6.5 * s, 0, Math.PI * 2); tctx.stroke();
+            tctx.fillStyle = '#fff';
+            tctx.font = 'bold ' + (6.5 * s) + 'px sans-serif';
+            tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+            tctx.shadowColor = 'rgba(0,0,0,0.55)'; tctx.shadowBlur = 1 * s;
+            tctx.fillText('A+', 0, 0.3 * s);
+            tctx.shadowBlur = 0;
+        }
         function drawPixelIcon(type, tctx, x, y, size) {
             tctx.save(); tctx.translate(x, y);
             const s = size / 24;
@@ -2092,6 +2404,16 @@
                     tctx.fillStyle = '#90a4ae'; tctx.strokeStyle = '#37474f';
                     tctx.beginPath(); tctx.roundRect(-2*s,-3*s,10*s,10*s,2*s); tctx.fill(); tctx.stroke();
                     break;
+                // Model Student (Classic A+) and Perfectionist (Endless Waves A+): both use the
+                // shared mini grade-rosette drawer above, colored to match this game's actual
+                // grade-A+ rosette accents - yellow/green for Classic, yellow/red for Endless -
+                // rather than living as external sprites/ files like the other ach_* icons.
+                case 'ach_model_student':
+                    drawRosetteAchievementIcon(tctx, s, '#fff59d', '#2ecc71');
+                    break;
+                case 'ach_perfectionist':
+                    drawRosetteAchievementIcon(tctx, s, '#fff59d', '#c0392b');
+                    break;
                 // skeletonkey/plasmabeam/wilkshirianknowledge item icons, and all 21
                 // ach_* achievement badge icons, now live in their own files under
                 // sprites/ (icon-skeletonkey.js, icon-plasmabeam.js,
@@ -2127,6 +2449,25 @@
             let h = pixelToAxial(x, y);
             let tile = hexTiles.get(hexKey(h.q, h.r));
             return !!tile && tile.type === 'land';
+        }
+
+        // Docks now double as safe ground: their deck juts out over a hazard hole (see
+        // spawnHazardDocks), so standing on one shouldn't count as being over the hazard even
+        // though the underlying tile is type 'hole'. DOCK_SCALE also drives drawDock()'s visual
+        // size, so this bounding box always matches what's actually drawn on screen.
+        // Bounds are the deck's local (unmirrored, unscaled) footprint from drawDock below.
+        const DOCK_SCALE = 1.22;
+        const DOCK_LOCAL_BOUNDS = { minX: -6, maxX: 60, minY: -16, maxY: 14 };
+        function isOnDock(px, py) {
+            for (let i = 0; i < docks.length; i++) {
+                let dk = docks[i];
+                let dx = px - dk.x, dy = py - dk.y;
+                let localX = (dk.faceLeft ? -dx : dx) / DOCK_SCALE;
+                let localY = dy / DOCK_SCALE;
+                if (localX >= DOCK_LOCAL_BOUNDS.minX && localX <= DOCK_LOCAL_BOUNDS.maxX &&
+                    localY >= DOCK_LOCAL_BOUNDS.minY && localY <= DOCK_LOCAL_BOUNDS.maxY) return true;
+            }
+            return false;
         }
 
         // Picks a random continuous point within some land hex, jittered a bit off-center so
@@ -2330,7 +2671,7 @@
         // by tier since it's the no-farming-required option.
         function traderCost(kind, tier) {
             if (kind === 'skin') {
-                if (tier === 'common') return { type: 'dupe', dupeTier: 'basic', amount: 3 };
+                if (tier === 'common') return { type: 'dupe', dupeTier: 'basic', amount: 10 };
                 if (tier === 'epic') return { type: 'dupe', dupeTier: 'rare', amount: 1 };
                 return { type: 'dupe', dupeTier: 'rare', amount: 3 }; // legendary
             }
@@ -2407,13 +2748,6 @@
         // chests spawned in updateSurvivalMode), the items-won badge row underneath. Called
         // right before the modal is shown, once all of this level's tallies are final.
         function showLevelCompleteSynopsis() {
-            let coinsEl = document.getElementById('level-stat-coins');
-            let enemiesEl = document.getElementById('level-stat-enemies');
-            let chestEl = document.getElementById('level-stat-chest');
-            if (coinsEl) coinsEl.innerText = `${levelCoinsCollected}/${levelCoinsPossible}`;
-            if (enemiesEl) enemiesEl.innerText = `${levelEnemiesKilled}/${levelEnemiesSpawned}`;
-            if (chestEl) chestEl.innerText = `${levelChestOpened}/${levelChestPossible}`;
-
             let section = document.getElementById('level-items-won-section');
             let container = document.getElementById('level-items-won');
             if (!section || !container) return;
@@ -2437,6 +2771,136 @@
                 container.appendChild(div);
             });
             section.style.display = 'block';
+        }
+
+        // Weighs this level's coin/enemy/chest tallies into a single 0-100 score and letter
+        // grade for the level-complete screen. Coins are 40% of the score, enemies 30%, chest
+        // 30%. Skeleton Key bonus chests are intentionally excluded (see levelSkeletonChestOpened) -
+        // they're a bonus on top of the base chest count, not part of what the chest % measures.
+        // A category with nothing possible (e.g. a level that spawned zero enemies) counts as full
+        // credit rather than dragging the score down for something the player had no shot at.
+        function calculateLevelGrade() {
+            let coinRatio = levelCoinsPossible > 0 ? Math.min(1, levelCoinsCollected / levelCoinsPossible) : 1;
+            let enemyRatio = levelEnemiesSpawned > 0 ? Math.min(1, levelEnemiesKilled / levelEnemiesSpawned) : 1;
+            let chestRatio = levelChestPossible > 0 ? Math.min(1, levelChestOpened / levelChestPossible) : 1;
+            let pct = Math.round((coinRatio * 0.4 + enemyRatio * 0.3 + chestRatio * 0.3) * 100);
+            let grade;
+            if (pct >= 100) grade = 'A+';
+            else if (pct >= 81) grade = 'A';
+            else if (pct >= 61) grade = 'B';
+            else if (pct >= 41) grade = 'C';
+            else if (pct >= 31) grade = 'D';
+            else grade = 'F';
+            return { pct, grade };
+        }
+
+        // Slams a single level-complete stat row into view and counts its numerator up from 0 to
+        // `target` over `duration`ms (denominator stays fixed throughout). Used for coins, enemies,
+        // and chest in turn by runLevelCompleteSequence() below. onDone fires once the count-up lands.
+        function slamStatRow(rowEl, valueEl, target, denom, duration, onDone) {
+            if (!rowEl || !valueEl) { if (onDone) onDone(); return; }
+            playSFX('stat_slam');
+            screenShake = Math.max(screenShake, 6);
+            rowEl.classList.remove('slam'); void rowEl.offsetWidth; rowEl.classList.add('slam');
+            let start = null;
+            function tick(ts) {
+                if (start === null) start = ts;
+                let p = Math.min(1, (ts - start) / duration);
+                let eased = 1 - Math.pow(1 - p, 3);
+                let current = Math.round(target * eased);
+                valueEl.innerText = `${current}/${denom}`;
+                if (p < 1) requestAnimationFrame(tick);
+                else { valueEl.innerText = `${target}/${denom}`; if (onDone) onDone(); }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        // Computes the grade and slams the badge into #level-modal's top-right corner.
+        // Anchors #level-grade-badge (a position:fixed sibling of #level-modal, deliberately not
+        // nested inside it - see the HTML comment) so the rosette's own center (its
+        // transform-origin, 105px/105px in its local box) lands near #level-modal's top-right
+        // corner, inset just enough that only the pleated rim/tails poke past the modal's edge
+        // rather than the whole rosette. Called once right before the slam-in, after the modal's
+        // final size (title + stat rows + items-won section) is already settled.
+        function positionGradeBadge() {
+            let modal = document.getElementById('level-modal');
+            let gradeBadge = document.getElementById('level-grade-badge');
+            if (!modal || !gradeBadge) return;
+            let rect = modal.getBoundingClientRect();
+            let anchorX = rect.right - 22;
+            let anchorY = rect.top + 22;
+            gradeBadge.style.left = (anchorX - 56) + 'px';
+            gradeBadge.style.top = (anchorY - 56) + 'px';
+        }
+
+        function revealLevelGrade(onDone) {
+            let gradeBadge = document.getElementById('level-grade-badge');
+            let gradeLetterEl = document.getElementById('level-grade-letter');
+            let { grade } = calculateLevelGrade();
+            if (gradeBadge && gradeLetterEl) {
+                gradeLetterEl.innerText = grade;
+                gradeBadge.classList.add('grade-' + grade.toLowerCase().replace('+', 'plus'));
+                positionGradeBadge();
+                gradeBadge.style.opacity = '1';
+                gradeBadge.classList.remove('slam'); void gradeBadge.offsetWidth; gradeBadge.classList.add('slam');
+                playSFX('grade_reveal');
+                screenShake = Math.max(screenShake, 16);
+            }
+            // Feeds the Model Student / Perfectionist achievements (see achievementDB) - persist
+            // the first time an A+ lands in each mode, then let checkAchievements() pick it up.
+            if (grade === 'A+') {
+                let flagKey = gameMode === 'endless' ? 'endlessAplusEver' : 'classicAplusEver';
+                if (storage.get(flagKey) !== 'true') { storage.set(flagKey, 'true'); checkAchievements(); }
+            }
+            if (onDone) onDone();
+        }
+
+        // Orchestrates the full level-complete reveal (~2.5s total): title/greyed-out Continue
+        // button appear instantly with the modal, then coins/enemies/chest each slam in and count
+        // up in turn, and finally the letter-grade badge slams into the corner once the score is
+        // known - at which point the Continue button un-greys and becomes clickable. Called once,
+        // right after showLevelCompleteSynopsis() and the modal being shown (see goal-reached check).
+        function runLevelCompleteSequence() {
+            let continueBtn = document.getElementById('level-continue-btn');
+            let gradeBadge = document.getElementById('level-grade-badge');
+            let coinsRow = document.getElementById('level-stat-row-coins');
+            let enemiesRow = document.getElementById('level-stat-row-enemies');
+            let chestRow = document.getElementById('level-stat-row-chest');
+            let coinsVal = document.getElementById('level-stat-coins');
+            let enemiesVal = document.getElementById('level-stat-enemies');
+            let chestVal = document.getElementById('level-stat-chest');
+
+            [coinsRow, enemiesRow, chestRow].forEach(r => r && r.classList.remove('slam'));
+            if (coinsVal) coinsVal.innerText = `0/${levelCoinsPossible}`;
+            if (enemiesVal) enemiesVal.innerText = `0/${levelEnemiesSpawned}`;
+            if (chestVal) chestVal.innerText = `0/${levelChestPossible}`;
+            if (gradeBadge) { gradeBadge.classList.remove('slam', 'grade-f', 'grade-d', 'grade-c', 'grade-b', 'grade-a', 'grade-aplus'); gradeBadge.style.opacity = '0'; }
+            if (continueBtn) continueBtn.disabled = true;
+
+            // Skeleton Key bonus chests are folded into the displayed numerator only (e.g. "2/1"
+            // if you also grabbed a bonus chest on a level with 1 regular chest) - the % score
+            // above is based on levelChestOpened/levelChestPossible alone.
+            let chestTotal = levelChestOpened + levelSkeletonChestOpened;
+
+            setTimeout(() => {
+                slamStatRow(coinsRow, coinsVal, levelCoinsCollected, levelCoinsPossible, 380, () => {
+                    setTimeout(() => {
+                        slamStatRow(enemiesRow, enemiesVal, levelEnemiesKilled, levelEnemiesSpawned, 380, () => {
+                            setTimeout(() => {
+                                slamStatRow(chestRow, chestVal, chestTotal, levelChestPossible, 380, () => {
+                                    setTimeout(() => {
+                                        revealLevelGrade(() => {
+                                            setTimeout(() => {
+                                                if (continueBtn) { continueBtn.disabled = false; playSFX('click'); }
+                                            }, 500);
+                                        });
+                                    }, 220);
+                                });
+                            }, 150);
+                        });
+                    }, 150);
+                });
+            }, 250);
         }
 
         // Restarts the toast's pop-in animation without forcing a synchronous layout. The old
@@ -2477,10 +2941,14 @@
 
         // Builds every land hex that has at least one neighbor which is a hole or is missing
         // entirely (i.e. borders the sky). Populates each qualifying tile's fenceCandidateDirs
-        // and returns the flat list, also used elsewhere (ambient rim splashes).
+        // and returns the flat list, also used elsewhere (ambient rim splashes). Bridge tiles
+        // (see buildIslandBridges below) are excluded outright - a rope bridge crossing open
+        // sky/hazard is deliberately open-sided, so it never rolls a fence of its own even
+        // though its edges border the same sky/hole tiles a fenced border hex would.
         function findBorderHexes() {
             let border = [];
             for (let tile of landHexList) {
+                if (tile.isBridge) { tile.fenceCandidateDirs = null; continue; }
                 let dirs = [];
                 for (let i = 0; i < 6; i++) {
                     let d = HEX_DIRS[i];
@@ -2491,6 +2959,133 @@
                 else tile.fenceCandidateDirs = null;
             }
             return border;
+        }
+
+        // Finds every separate connected landmass (BFS over land-type hexes only, adjacent
+        // through the 6 HEX_DIRS neighbors - holes and missing/sky hexes never connect two
+        // tiles). Levels with disconnected footprint blobs (see the isDisconnected roll in
+        // generateLevel's shape-blob loop) can otherwise produce an island with no walkable
+        // path to it at all.
+        function findLandComponents() {
+            let visited = new Set();
+            let components = [];
+            for (let start of landHexList) {
+                if (visited.has(start)) continue;
+                let comp = [start];
+                visited.add(start);
+                let stack = [start];
+                while (stack.length) {
+                    let cur = stack.pop();
+                    for (let d of HEX_DIRS) {
+                        let nb = hexTiles.get(hexKey(cur.q + d.q, cur.r + d.r));
+                        if (nb && nb.type === 'land' && !visited.has(nb)) { visited.add(nb); comp.push(nb); stack.push(nb); }
+                    }
+                }
+                components.push(comp);
+            }
+            return components;
+        }
+
+        // Lays a rope-bridge path of hex tiles in a straight pixel-space line between tileA and
+        // tileB, creating any tile along the way that doesn't already exist (open sky) or
+        // converting one that was a hazard hole back to safe land. Every tile the bridge touches
+        // - including its two anchor tiles on each island - is flagged isBridge so
+        // findBorderHexes() above skips it entirely and no fence can ever spawn across the span.
+        function bridgeHexTiles(tileA, tileB) {
+            let span = dist(tileA.x, tileA.y, tileB.x, tileB.y);
+            let steps = Math.max(1, Math.ceil(span / (HEX_TILE_DIST * 0.6)));
+            for (let i = 0; i <= steps; i++) {
+                let t = i / steps;
+                let px = tileA.x + (tileB.x - tileA.x) * t;
+                let py = tileA.y + (tileB.y - tileA.y) * t;
+                let h = pixelToAxial(px, py);
+                let key = hexKey(h.q, h.r);
+                let tile = hexTiles.get(key);
+                if (!tile) {
+                    let p = axialToPixel(h.q, h.r);
+                    tile = { q: h.q, r: h.r, x: p.x, y: p.y, type: 'land', element: null, hasFence: false, fenceCandidateDirs: null, isBridge: true };
+                    hexTiles.set(key, tile);
+                    landHexList.push(tile);
+                } else if (tile.type === 'hole') {
+                    tile.type = 'land'; tile.isBridge = true;
+                    let hIdx = holeHexList.indexOf(tile);
+                    if (hIdx !== -1) holeHexList.splice(hIdx, 1);
+                    landHexList.push(tile);
+                } else {
+                    tile.isBridge = true;
+                }
+            }
+            tileA.isBridge = true;
+            tileB.isBridge = true;
+        }
+
+        // Occasionally decorates a large hazard pool (a carved cluster at or near the max cluster
+        // size) with a simple wooden pier jutting out from one of its shore tiles - purely
+        // atmospheric set dressing, no collision or interaction. Mirrors the fishingScene
+        // placement pattern above: only a hex's left/right edges (HEX_DIRS[0] east / [3] west)
+        // qualify, so the pier sprite only ever needs a horizontal mirror, never a rotation.
+        // Must run after buildFences()/buildSurvivalFences() (borderHexList + each tile's
+        // fenceCandidateDirs need to already be computed) and after any other single-hex
+        // placements it should avoid overlapping (chest, hives, fishingScene, traders).
+        // tile.hasFence is also excluded here so a dock never gets placed on the same hex
+        // border a fence already occupies - buildFences() puts a fence on every one of a
+        // hasFence tile's candidate edges, including whichever left/right edge a dock would
+        // otherwise want to use.
+        const LARGE_POOL_SIZE = 5, dockChance = 0.4;
+        function spawnHazardDocks(hazardClusters) {
+            for (let cluster of hazardClusters) {
+                if (cluster.length < LARGE_POOL_SIZE) continue;
+                if (Math.random() >= dockChance) continue;
+                let clusterSet = new Set(cluster);
+                let edges = [];
+                for (let tile of borderHexList) {
+                    if (tile.element || tile.isBridge || !tile.fenceCandidateDirs || tile.hasFence) continue;
+                    for (let dirIdx of tile.fenceCandidateDirs) {
+                        if (dirIdx !== 0 && dirIdx !== 3) continue; // only left/right sides
+                        let d = HEX_DIRS[dirIdx];
+                        let nb = hexTiles.get(hexKey(tile.q + d.q, tile.r + d.r));
+                        if (nb && nb.type === 'hole' && clusterSet.has(nb)) edges.push({ tile, dirIdx });
+                    }
+                }
+                if (!edges.length) continue;
+                let pick = edges[Math.floor(Math.random() * edges.length)];
+                let d = HEX_DIRS[pick.dirIdx];
+                let [p1, p2] = hexEdgeCorners(pick.tile, d.q, d.r);
+                let edgeMidX = (p1.x + p2.x) / 2, edgeMidY = (p1.y + p2.y) / 2;
+                let angle = Math.atan2(edgeMidY - pick.tile.y, edgeMidX - pick.tile.x);
+                docks.push({
+                    x: pick.tile.x + Math.cos(angle) * HEX_SIZE * 0.15,
+                    y: pick.tile.y + Math.sin(angle) * HEX_SIZE * 0.15,
+                    faceLeft: pick.dirIdx === 3, seed: Math.random() * 1000
+                });
+                pick.tile.element = { type: 'dock' };
+            }
+        }
+
+        // Joins every disconnected landmass back to the main one with a rope bridge at the pair
+        // of tiles closest to each other, repeating (recomputing components after each bridge,
+        // since a bridge merges two components into one) until only a single connected
+        // landmass remains. Called once per generateLevel(), before buildFences() so the fresh
+        // bridge tiles are already in place when fence candidacy is computed.
+        function buildIslandBridges() {
+            let components = findLandComponents();
+            let guard = 0;
+            while (components.length > 1 && guard++ < 20) {
+                components.sort((a, b) => b.length - a.length);
+                let main = components[0];
+                let best = null;
+                for (let ci = 1; ci < components.length; ci++) {
+                    for (let a of main) {
+                        for (let b of components[ci]) {
+                            let d = dist(a.x, a.y, b.x, b.y);
+                            if (!best || d < best.d) best = { d, a, b };
+                        }
+                    }
+                }
+                if (!best) break;
+                bridgeHexTiles(best.a, best.b);
+                components = findLandComponents();
+            }
         }
 
         // Fences have a base chance to appear along any land-hex edge that faces a hazard hole
@@ -2535,14 +3130,13 @@
                 if (skTile && !skTile.element) {
                     skeletonChests.push({ x: skTile.x, y: skTile.y, radius: 22, collected: false });
                     skTile.element = { type: 'skeletonchest' };
-                    levelChestPossible++;
                 }
             }
         }
 
         function generateLevel() {
             items = []; enemies = []; trees = []; hives = []; decorations = []; projectiles = []; icicles = [];
-            flameParticles = []; leaves = []; splashes = []; powerups = []; chest = null; fishingScene = null; skeletonChests = []; surviveChests = []; skinTrader = null; goldTrader = null;
+            flameParticles = []; leaves = []; splashes = []; powerups = []; chest = null; fishingScene = null; skeletonChests = []; surviveChests = []; skinTrader = null; goldTrader = null; docks = [];
             hexTiles = new Map(); landHexList = []; holeHexList = []; borderHexList = []; fences = [];
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.hazardTimer = 0; player.spikesTimer = 0;
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0;
@@ -2550,7 +3144,7 @@
             goalUnreachable = false; goalSeen = false;
             levelCoinsCollected = 0; levelCoinsPossible = 0;
             levelEnemiesKilled = 0; levelEnemiesSpawned = 0;
-            levelChestOpened = 0; levelChestPossible = 0;
+            levelChestOpened = 0; levelChestPossible = 0; levelSkeletonChestOpened = 0;
             levelItemsWon = [];
 
             lastCountdownSecond = -1;
@@ -2638,6 +3232,9 @@
             function isInterior(tile) { return HEX_DIRS.every(d => hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r))); }
             const holeSeedChance = 0.03, holeGrowChance = 0.55, minClusterSize = 2, maxClusterSize = 6;
             let carved = new Set();
+            // Every carved cluster gets recorded here (used below by spawnHazardDocks to find
+            // large pools worth decorating with a pier).
+            let hazardClusters = [];
             for (let tile of hexTiles.values()) {
                 if (tile === goalTile || carved.has(tile)) continue;
                 if (dist(tile.x, tile.y, 0, 0) < 220) continue;
@@ -2662,9 +3259,11 @@
                         if (forceAdd || Math.random() < holeGrowChance) { nb.type = 'hole'; carved.add(nb); cluster.push(nb); frontier.push(nb); }
                     }
                 }
+                hazardClusters.push(cluster);
             }
             landHexList = []; holeHexList = [];
             for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
+            buildIslandBridges();
             buildLandTileGrid();
 
             goal.x = goalTile.x; goal.y = goalTile.y; goal.active = true;
@@ -2734,6 +3333,8 @@
                     pick.tile.element = { type: 'fishingScene' };
                 }
             }
+
+            spawnHazardDocks(hazardClusters);
 
             // Rare traveling traders: same land-hex-placement pattern as fishingScene above,
             // just without the water-edge requirement (any open land hex works - see
@@ -2838,11 +3439,17 @@
             if (level < 3 || level % 3 !== 0) return;
             let t = pickLandHex(220);
             if (!t) return;
+            // Random gacha-slime shopkeeper look (color + hat) for the stall - purely cosmetic,
+            // rerolled fresh each time a trader spawns. appeared/mouthAnimStart track the
+            // one-shot "yoo-hoo" greeting (sound + mouth-open/squish) fired the moment the
+            // stall first scrolls onscreen - see the isOnScreen checks in draw().
+            let shopkeeperSkin = basicSkins[Math.floor(Math.random() * basicSkins.length)].id;
+            let shopkeeperHat = hats[Math.floor(Math.random() * hats.length)].id;
             if (Math.random() < 0.5) {
-                skinTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: dupeShopStock() };
+                skinTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: dupeShopStock(), skinColorId: shopkeeperSkin, hatId: shopkeeperHat, appeared: false, mouthAnimStart: 0 };
                 t.element = { type: 'skinTrader' };
             } else {
-                goldTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: rollTraderStock() };
+                goldTrader = { x: t.x, y: t.y, seed: Math.random() * 1000, triggered: false, stock: rollTraderStock(), skinColorId: shopkeeperSkin, hatId: shopkeeperHat, appeared: false, mouthAnimStart: 0 };
                 t.element = { type: 'goldTrader' };
             }
         }
@@ -2891,6 +3498,9 @@
             function survivalIsInterior(tile) { return HEX_DIRS.every(d => hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r))); }
             const holeSeedChance = 0.035, holeGrowChance = 0.55, minClusterSize = 2, maxClusterSize = 6;
             let carved = new Set();
+            // Every carved cluster gets recorded here (used below by spawnHazardDocks to find
+            // large pools worth decorating with a pier) - same bookkeeping generateLevel() does.
+            let hazardClusters = [];
             for (let tile of hexTiles.values()) {
                 if (tile === goalTile || carved.has(tile)) continue;
                 if (dist(tile.x, tile.y, 0, 0) < 220) continue;
@@ -2913,6 +3523,7 @@
                         if (forceAdd || Math.random() < holeGrowChance) { nb.type = 'hole'; carved.add(nb); cluster.push(nb); frontier.push(nb); }
                     }
                 }
+                hazardClusters.push(cluster);
             }
 
             landHexList = []; holeHexList = [];
@@ -2929,6 +3540,7 @@
             // No starting chest for Survive stages - the two chests flanking the goal, spawned
             // once the timer runs out (see updateSurvivalMode), are the level's only chests.
             spawnSkeletonChests();
+            spawnHazardDocks(hazardClusters);
 
             // Bees need a hive to home to - mirrors generateLevel()'s stage-4-and-up hive
             // placement so a Survival arena standing in for stage 4+ can spawn them too.
@@ -3221,8 +3833,8 @@
                         <canvas id="gacha-canvas" width="300" height="240"></canvas>
                     </div>
                     <div class="gacha-pull-row">
-                        <button class="gacha-btn" id="btn-pull">Pull (100 <img class="icon-img" style="width:0.9em;height:0.9em;" src="${iconDataURL('coin',24)}" alt="">)</button>
-                        <button class="gacha-btn gacha-btn-ten" id="btn-pull-ten">Pull x10 (900 <img class="icon-img" style="width:0.9em;height:0.9em;" src="${iconDataURL('coin',24)}" alt="">)</button>
+                        <button class="gacha-btn" id="btn-pull">Pull<br>250 <img class="icon-img" style="width:0.9em;height:0.9em;" src="${iconDataURL('coin',24)}" alt=""></button>
+                        <button class="gacha-btn gacha-btn-ten" id="btn-pull-ten">Pull x10<br>2250 <img class="icon-img" style="width:0.9em;height:0.9em;" src="${iconDataURL('coin',24)}" alt=""></button>
                     </div>
                     <div class="shop-coin-bag">
                         <img class="icon-img" style="width:1.1em;height:1.1em;" src="${iconDataURL('coin',24)}" alt=""> <span id="shop-coin-display">0</span>
@@ -3762,16 +4374,17 @@
 
         function updateShopButtons() {
             let pullBtn = document.getElementById('btn-pull');
-            if (pullBtn) pullBtn.disabled = totalCoins < 100 || (crane && crane.state !== 'idle');
+            if (pullBtn) pullBtn.disabled = totalCoins < GACHA_ONE_COST || (crane && crane.state !== 'idle');
             let pullTenBtn = document.getElementById('btn-pull-ten');
             if (pullTenBtn) pullTenBtn.disabled = totalCoins < GACHA_TEN_COST || (crane && crane.state !== 'idle');
             let coinDisplay = document.getElementById('shop-coin-display');
             if (coinDisplay) coinDisplay.innerText = totalCoins;
         }
 
+        const GACHA_ONE_COST = 250;
         function pullGacha() {
-            if (totalCoins < 100 || crane.state !== 'idle' || gachaSlimes.length === 0) return;
-            totalCoins -= 100; storage.set('landSlidersCoins', totalCoins); updateHUD(); updateShopButtons();
+            if (totalCoins < GACHA_ONE_COST || crane.state !== 'idle' || gachaSlimes.length === 0) return;
+            totalCoins -= GACHA_ONE_COST; storage.set('landSlidersCoins', totalCoins); updateHUD(); updateShopButtons();
             storage.set('gachaPullCount', (parseInt(storage.get('gachaPullCount') || 0)) + 1);
             checkAchievements();
 
@@ -3786,7 +4399,7 @@
             crane.state = 'descending';
         }
 
-        // Bulk pull: a modest discount off 10x the single-pull price (900 vs. 1000), the usual
+        // Bulk pull: a modest discount off 10x the single-pull price (2250 vs. 2500), the usual
         // "buy in bulk" incentive gacha games use to make the x10 button worth reaching for.
         // Unlike a single pull (one claw, already resting over the bowl), a x10 pull brings in
         // 9 extra crane rigs that slide in from either side of the play field at varied speeds,
@@ -3795,7 +4408,7 @@
         // created here - before it's slid a single pixel on screen - so the whole sequence is
         // deterministic: the physics just has to get each claw to the slime it was already
         // promised, never pick one on arrival.
-        const GACHA_TEN_COST = 900;
+        const GACHA_TEN_COST = 2250;
         function pullGachaTen() {
             if (totalCoins < GACHA_TEN_COST || crane.state !== 'idle' || gachaTenInProgress) return;
 
@@ -4232,10 +4845,15 @@
         }
 
         // Promo codes redeemable from the tiny "Promo Codes" button in the Skin Shop's Skins
-        // tab. Keyed by the 4-digit code entered via the slider widget; each entry grants one
-        // inventory copy of the given skin the same way unlockSecretGlitchSkin does.
+        // tab. Keyed by the 4-digit code entered via the slider widget. Two reward shapes:
+        //  - type 'skin': grants one inventory copy of the given skin (same as
+        //    unlockSecretGlitchSkin); "already redeemed" is derived from already owning it.
+        //  - type 'coins': grants a flat coin amount. Coins have no natural "already owned"
+        //    signal the way a skin does, so redemption is tracked separately per-code via
+        //    'promoRedeemed_<code>' to stop the same code being reused for infinite coins.
         const promoCodes = {
-            "8424": { id: "onebit", name: "1-Bit" }
+            "8424": { type: "skin", id: "onebit", name: "1-Bit" },
+            "9999": { type: "coins", amount: 99999 }
         };
 
         function openPromoModal() {
@@ -4251,6 +4869,23 @@
             if (!reward) {
                 msgEl.style.color = '#e74c3c';
                 msgEl.innerText = 'Invalid code.';
+                return;
+            }
+            if (reward.type === 'coins') {
+                let redeemedKey = 'promoRedeemed_' + code;
+                if (storage.get(redeemedKey) === 'true') {
+                    msgEl.style.color = '#f1c40f';
+                    msgEl.innerText = 'You already redeemed this code.';
+                    return;
+                }
+                storage.set(redeemedKey, 'true');
+                totalCoins += reward.amount;
+                storage.set('landSlidersCoins', totalCoins);
+                updateHUD();
+                updateShopButtons();
+                playSFX('secret_unlock');
+                msgEl.style.color = '#2ecc71';
+                msgEl.innerText = `+${reward.amount.toLocaleString()} coins!`;
                 return;
             }
             let alreadyOwned = parseInt(storage.get('inv_' + reward.id) || 0) > 0;
@@ -4485,6 +5120,12 @@
         function nextLevel() {
             level++;
             document.getElementById('level-modal').style.display = 'none';
+            let gradeBadge = document.getElementById('level-grade-badge');
+            // Must also drop 'slam' here, not just zero the inline opacity: the .slam keyframe
+            // ends on opacity:1 with animation-fill-mode:forwards, and a fill-forwards animation
+            // value beats a plain inline style in the cascade. Leaving the class on left the
+            // badge visibly stuck on-screen after Continue was pressed.
+            if (gradeBadge) { gradeBadge.classList.remove('slam'); gradeBadge.style.opacity = '0'; }
             gameState = 'playing'; player.worldX = 0; player.worldY = 0; player.vx = 0; player.vy = 0; generateLevel();
         }
 
@@ -4498,34 +5139,130 @@
         // game (same convention as the shop/settings/almanac modals) and pulls the next two
         // sentences of the story off wherever fishingStoryIndex left off, then persists the
         // advanced index immediately so the player keeps their place even if they quit right
-        // after reading - the story wraps back to the beginning once it runs out.
+        // after reading. Once the story's been fully read (see triggerStoryCompleteFlavor),
+        // every further touch replays its closing pair as flavor text instead - the story never
+        // wraps back to the beginning.
         function triggerFishingDialogue() {
+            if (storage.get('landSlidersStoryComplete') === 'true') { triggerStoryCompleteFlavor(); return; }
             if (gameState === 'playing') { previousState = gameState; gameState = 'paused'; }
             let total = fishingStorySentences.length;
-            let idx = fishingStoryIndex % total;
-            fishingDialogueSentences = [fishingStorySentences[idx], fishingStorySentences[(idx + 1) % total]];
+            let idx = fishingStoryIndex;
+            // The last pair hands off into the story-ending epilogue on close (see
+            // advanceFishingDialogue) rather than just resuming the game like every earlier pair.
+            fishingDialogueIsFinal = (idx + 2) >= total;
+            fishingDialogueSentences = [fishingStorySentences[idx], fishingStorySentences[idx + 1]];
             fishingDialogueStep = 0;
-            fishingStoryIndex = (idx + 2) % total;
+            fishingStoryIndex = fishingDialogueIsFinal ? total : idx + 2;
             storage.set('landSlidersFishingIndex', fishingStoryIndex);
-            let seen = (parseInt(storage.get('landSlidersStorySeen')) || 0) + 2;
-            storage.set('landSlidersStorySeen', seen);
-            checkAchievements();
             showFishingDialogueStep();
             document.getElementById('fishing-dialogue').style.display = 'block';
         }
 
-        // Advances to the second sentence on the first tap, then closes the box and hands
-        // control back to the game on the second tap.
+        // Advances to the second sentence on the first tap, then closes the box on the second
+        // tap. What happens next depends on which pair this was: the story's last pair hands off
+        // straight into the story-ending epilogue; a post-completion flavor replay (see
+        // triggerStoryCompleteFlavor) gets a brief flicker before resuming; every other pair just
+        // hands control back to the game like before.
         function advanceFishingDialogue() {
             if (!fishingDialogueSentences) return;
             fishingDialogueStep++;
             if (fishingDialogueStep >= fishingDialogueSentences.length) {
                 document.getElementById('fishing-dialogue').style.display = 'none';
                 fishingDialogueSentences = null;
+                if (fishingDialogueIsFinal) {
+                    fishingDialogueIsFinal = false;
+                    triggerStoryEnding();
+                    return;
+                }
+                if (fishingFlavorReplay) {
+                    fishingFlavorReplay = false;
+                    stageFlicker(false, () => { if (gameState === 'paused') gameState = previousState; });
+                    return;
+                }
                 if (gameState === 'paused') gameState = previousState;
                 return;
             }
             showFishingDialogueStep();
+        }
+
+        // Once the story's already been fully read, every further touch of the man and boy just
+        // replays its closing pair as flavor text (reusing the same #fishing-dialogue box) rather
+        // than doing anything to progress or repeat the story, followed by a brief stage flicker
+        // rather than an instant resume - see the fishingFlavorReplay branch in
+        // advanceFishingDialogue above.
+        function triggerStoryCompleteFlavor() {
+            if (gameState === 'playing') { previousState = gameState; gameState = 'paused'; }
+            fishingDialogueIsFinal = false;
+            fishingFlavorReplay = true;
+            let total = fishingStorySentences.length;
+            fishingDialogueSentences = [fishingStorySentences[total - 2], fishingStorySentences[total - 1]];
+            fishingDialogueStep = 0;
+            showFishingDialogueStep();
+            document.getElementById('fishing-dialogue').style.display = 'block';
+        }
+
+        // Fills in the currently-showing segment of the story-ending epilogue (see
+        // triggerStoryEnding/advanceStoryEnding below).
+        function showStoryEndingStep() {
+            document.getElementById('story-ending-dialogue-text').innerText = storyEndingSegments[storyEndingIndex];
+        }
+
+        // Called once the story's final pair has been read out in #fishing-dialogue - plays the
+        // zoomed-out epilogue one segment at a time in the centered #story-ending-dialogue box.
+        // The game stays paused the whole way through, picking up from triggerFishingDialogue.
+        function triggerStoryEnding() {
+            storyEndingIndex = 0;
+            showStoryEndingStep();
+            document.getElementById('story-ending-dialogue').style.display = 'block';
+        }
+
+        // Advances through the epilogue's segments one tap at a time. Tapping past the final
+        // segment marks the story permanently complete, unlocks its achievement, and flickers the
+        // stage to black before ending the run - the story never loops back to the start after this.
+        function advanceStoryEnding() {
+            storyEndingIndex++;
+            if (storyEndingIndex >= storyEndingSegments.length) {
+                document.getElementById('story-ending-dialogue').style.display = 'none';
+                storage.set('landSlidersStoryComplete', 'true');
+                checkAchievements();
+                stopMusicForStoryEnding();
+                stageFlicker(true, () => {
+                    triggerGameOver('story');
+                    // The game-over screen has its own dimmed backdrop, so the blackout overlay
+                    // is no longer needed once it's up - clear it rather than leaving it sitting
+                    // on top at full opacity, which would hide the screen underneath.
+                    let overlay = document.getElementById('story-blackout');
+                    overlay.style.opacity = '0';
+                    overlay.style.pointerEvents = 'none';
+                });
+                return;
+            }
+            showStoryEndingStep();
+        }
+
+        // Flickers the full-screen #story-blackout overlay a few times, ending either fully dark
+        // (endDark true, ahead of the story-ending game over) or back to fully transparent
+        // (endDark false, the brief flicker after a post-completion flavor replay), then fires
+        // callback once the flicker settles. Every call starts the lightbulb buzz (see
+        // startLightbulbBuzz) - sustained through to the game over screen when endDark is true,
+        // brief and self-fading when it's just the man-and-boy revisit flicker.
+        function stageFlicker(endDark, callback) {
+            startLightbulbBuzz(endDark);
+            let overlay = document.getElementById('story-blackout');
+            overlay.style.pointerEvents = 'auto';
+            let steps = [1, 0, 1, 0, 1, 0, 1, endDark ? 1 : 0];
+            let i = 0;
+            function tick() {
+                if (i < steps.length) {
+                    overlay.style.opacity = steps[i];
+                    i++;
+                    setTimeout(tick, 80);
+                } else {
+                    if (!endDark) overlay.style.pointerEvents = 'none';
+                    if (callback) callback();
+                }
+            }
+            tick();
         }
 
         // Called once when the player physically touches a rare trader (see the collision
@@ -4559,7 +5296,7 @@
                 let div = document.createElement('div');
                 div.className = 'shop-item';
                 div.innerHTML =
-                    '<div style="display:flex;align-items:center;gap:10px;">' +
+                    '<div style="display:flex;align-items:center;gap:10px;cursor:pointer;" id="merchant-item-info-' + idx + '">' +
                         '<img class="icon-img" style="width:28px;height:28px;" src="' + iconDataURL(slot.itemId, 28) + '" alt="">' +
                         '<div style="text-align:left;">' +
                             '<div class="item-rarity-name rarity-' + slot.tier + '" style="font-size:0.65rem;">' + def.name + '</div>' +
@@ -4568,6 +5305,12 @@
                             '</div>' +
                         '</div>' +
                     '</div>';
+                // Tapping the icon/name opens the same shared detail modal the Almanac uses, so
+                // players can check what an item does before spending their dupes/gold on it.
+                // seenKey/refreshFn are omitted (null) since there's no "NEW" badge concept here.
+                div.querySelector('#merchant-item-info-' + idx).addEventListener('click', () => {
+                    openAlmanacDetail(iconDataURL(slot.itemId, 40), def.name, def.desc, null, null);
+                });
                 let btn = document.createElement('button');
                 btn.className = 'menu-btn';
                 btn.style.cssText = 'min-width:0;padding:8px 16px;font-size:0.6rem;margin:0;box-shadow:0 4px 0 rgba(0,0,0,0.3);';
@@ -4734,6 +5477,7 @@
         // Tap/click anywhere on the fishing-scene story box to advance it - first tap reveals
         // the second sentence, second tap closes it and hands control back to the game.
         document.getElementById('fishing-dialogue').addEventListener('click', advanceFishingDialogue);
+        document.getElementById('story-ending-dialogue').addEventListener('click', advanceStoryEnding);
         // The Leave button already has the close-modal-btn class (hides the modal + resumes
         // gameState via the generic handler below) - this second listener just clears
         // activeMerchant so a stale reference doesn't linger into the next trader encounter.
@@ -4867,6 +5611,12 @@
                             let target = playerTrail[histIdx] || { x: player.worldX, y: player.worldY };
                             comp.x += (target.x - comp.x) * 0.25;
                             comp.y += (target.y - comp.y) * 0.25;
+                            // Companion's own per-tick velocity, fed into drawCharacterModel at
+                            // render time (see the 'companion' branch further down) so it gasps
+                            // and squishes exactly like the player does when moving fast, rather
+                            // than always rendering with its mouth in the neutral idle smile.
+                            comp.vx = comp.x - comp.prevX;
+                            comp.vy = comp.y - comp.prevY;
                         }
                     }
 
@@ -4968,7 +5718,7 @@
                     // Roguelite: Wings item extends how long you can hover over a hazard before falling.
                     let wingsStacks = runItems.wings || 0;
                     let hazardLimit = 1.25 + (wingsStacks > 0 ? 0.5 + (wingsStacks - 1) * 0.25 : 0);
-                    if (!isSafe(player.worldX, player.worldY) && !isPlayerInvulnerable()) {
+                    if (!isSafe(player.worldX, player.worldY) && !isOnDock(player.worldX, player.worldY) && !isPlayerInvulnerable()) {
                         if (player.hazardTimer === 0) spawnSplash(player.worldX, player.worldY);
                         player.hazardTimer += 1/60;
                         if (player.hazardTimer > 0.2) warnUI.style.display = 'block';
@@ -5018,7 +5768,7 @@
                     for (let sci = skeletonChests.length - 1; sci >= 0; sci--) {
                         let sc = skeletonChests[sci];
                         if (!sc.collected && dist(player.worldX, player.worldY, sc.x, sc.y) < player.radius + sc.radius) {
-                            sc.collected = true; levelChestOpened++; screenShake = Math.max(screenShake, 24); playSFX('chest'); grantGold(50); if (!isSurvivalLevel) goal.collected = Math.min(goal.required, goal.collected + 50);
+                            sc.collected = true; levelSkeletonChestOpened++; screenShake = Math.max(screenShake, 24); playSFX('chest'); grantGold(50); if (!isSurvivalLevel) goal.collected = Math.min(goal.required, goal.collected + 50);
                             for (let si = 0; si < 20; si++) spawnLoot(sc.x, sc.y, rollItemType(level), (Math.random()-0.5)*35, (Math.random()-0.5)*35);
                             grantRoguelikeItem(rollRoguelikeItem(true));
                             updateHUD(); markCoinsDirty();
@@ -5047,15 +5797,33 @@
                         triggerFishingDialogue();
                     }
 
-                    // Rare traders: touching either one opens its shop - same one-shot-per-spawn
-                    // convention as fishingScene above.
-                    if (skinTrader && !skinTrader.triggered && dist(player.worldX, player.worldY, skinTrader.x, skinTrader.y) < player.radius + 30) {
-                        skinTrader.triggered = true;
-                        triggerMerchantDialogue('skin', skinTrader);
+                    // Shop greeting: fires once the player gets within three tiles, rather than
+                    // whenever the stall happens to scroll onscreen - the render cull buffer
+                    // (see cullBuffer in draw()) pre-renders stalls well before they're actually
+                    // visible, which made the old onscreen-triggered chime play too early.
+                    if (skinTrader && !skinTrader.appeared && dist(player.worldX, player.worldY, skinTrader.x, skinTrader.y) < HEX_TILE_DIST * 3) {
+                        skinTrader.appeared = true; skinTrader.mouthAnimStart = Date.now(); playSFX('shop_yoohoo');
                     }
-                    if (goldTrader && !goldTrader.triggered && dist(player.worldX, player.worldY, goldTrader.x, goldTrader.y) < player.radius + 30) {
-                        goldTrader.triggered = true;
-                        triggerMerchantDialogue('gold', goldTrader);
+                    if (goldTrader && !goldTrader.appeared && dist(player.worldX, player.worldY, goldTrader.x, goldTrader.y) < HEX_TILE_DIST * 3) {
+                        goldTrader.appeared = true; goldTrader.mouthAnimStart = Date.now(); playSFX('shop_yoohoo');
+                    }
+
+                    // Rare traders: touching either one opens its shop. `triggered` now just
+                    // tracks whether the player is currently standing in the trigger radius (armed
+                    // false while inside, reset true on exit) rather than being a permanent
+                    // one-shot - so walking off the stall's tile and back on reopens the same shop.
+                    // trader.stock itself is untouched here (built once in spawnRareTrader and only
+                    // ever mutated by buyMerchantItem's .purchased flag), so reopening never rerolls
+                    // the offer or forgets what's already been bought.
+                    if (skinTrader) {
+                        let skinInRange = dist(player.worldX, player.worldY, skinTrader.x, skinTrader.y) < player.radius + 30;
+                        if (skinInRange && !skinTrader.triggered) { skinTrader.triggered = true; triggerMerchantDialogue('skin', skinTrader); }
+                        else if (!skinInRange) { skinTrader.triggered = false; }
+                    }
+                    if (goldTrader) {
+                        let goldInRange = dist(player.worldX, player.worldY, goldTrader.x, goldTrader.y) < player.radius + 30;
+                        if (goldInRange && !goldTrader.triggered) { goldTrader.triggered = true; triggerMerchantDialogue('gold', goldTrader); }
+                        else if (!goldInRange) { goldTrader.triggered = false; }
                     }
 
                     // Roguelite: Magnet item pulls nearby coins/gems toward the player.
@@ -5072,7 +5840,18 @@
                                 c.vx += (dx / d) * pull; c.vy += (dy / d) * pull;
                             }
                         }
-                        if (Math.abs(c.vx) > 0.1 || Math.abs(c.vy) > 0.1) { c.x += c.vx; c.y += c.vy; c.vx *= 0.88; c.vy *= 0.88; }
+                        if (Math.abs(c.vx) > 0.1 || Math.abs(c.vy) > 0.1) {
+                            c.x += c.vx; c.y += c.vy; c.vx *= 0.88; c.vy *= 0.88;
+                            // Fences are solid - stop loot items (magnet pull, knockback) from
+                            // sliding through them, same treatment resolveFenceCollision gives
+                            // the player/enemies each tick. Zero the velocity on a hit rather
+                            // than just repositioning, so the item settles at the fence instead
+                            // of jittering back and forth against it every frame.
+                            let itemFencePushed = resolveFenceCollision(c.x, c.y, c.radius, false);
+                            if (itemFencePushed.x !== c.x || itemFencePushed.y !== c.y) {
+                                c.x = itemFencePushed.x; c.y = itemFencePushed.y; c.vx = 0; c.vy = 0;
+                            }
+                        }
                         if (!isSafe(c.x, c.y) && !c.beingEaten) { spawnSplash(c.x, c.y); items.splice(i, 1); continue; }
                         if (!c.collected && !c.beingEaten && dist(player.worldX, player.worldY, c.x, c.y) < player.radius + c.radius) {
                             c.collected = true; levelCoinsCollected++;
@@ -5107,8 +5886,15 @@
                         } else if (e.type === 'dasher') {
                             if (isOnScreen(e.x, e.y, 60)) {
                                 e.stateTimer++;
-                                if (e.stateTimer < 80) e.angle = Math.atan2(player.worldY - e.y, player.worldX - e.x);
-                                else if (e.stateTimer < 110) { e.x += Math.cos(e.angle)*(e.speed*speedMod*3); e.y += Math.sin(e.angle)*(e.speed*speedMod*3); } 
+                                if (e.stateTimer < 80) {
+                                    e.angle = Math.atan2(player.worldY - e.y, player.worldX - e.x);
+                                    // Snort right near the end of the telegraph, shortly before the
+                                    // dash actually fires, so it reads as a "brace yourself" tell.
+                                    if (e.stateTimer === 60) playSFX('bull_windup');
+                                } else if (e.stateTimer < 110) {
+                                    if (e.stateTimer === 80) playSFX('bull_charge');
+                                    e.x += Math.cos(e.angle)*(e.speed*speedMod*3); e.y += Math.sin(e.angle)*(e.speed*speedMod*3);
+                                } 
                                 else e.stateTimer = 0;
                             } else { e.stateTimer = 0; e.angle = Math.atan2(player.worldY - e.y, player.worldX - e.x); }
                         } else if (e.type === 'shooter') {
@@ -5116,7 +5902,9 @@
                             let targetAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x);
                             if (dToPlayer < 300) { e.x -= Math.cos(targetAngle)*e.speed; e.y -= Math.sin(targetAngle)*e.speed; } 
                             else if (dToPlayer > 400) { e.x += Math.cos(targetAngle)*e.speed; e.y += Math.sin(targetAngle)*e.speed; }
-                            if (e.stateTimer > 120 && isOnScreen(e.x, e.y, 100)) { projectiles.push({ x: e.x, y: e.y, vx: Math.cos(targetAngle)*4, vy: Math.sin(targetAngle)*4, radius: 8 }); e.stateTimer = 0; }
+                            // Charge-up tone shortly before it fires, so the shot has a tell too.
+                            if (e.stateTimer === 90 && isOnScreen(e.x, e.y, 100)) playSFX('eye_windup');
+                            if (e.stateTimer > 120 && isOnScreen(e.x, e.y, 100)) { projectiles.push({ x: e.x, y: e.y, vx: Math.cos(targetAngle)*4, vy: Math.sin(targetAngle)*4, radius: 8 }); playSFX('eye_fire'); e.stateTimer = 0; }
                         } else if (e.type === 'hopper') {
                             if (e.state === 'idle') { if (isOnScreen(e.x, e.y, 50)) e.stateTimer++; else e.stateTimer = 0; } else { e.stateTimer++; }
                             if (e.stateTimer < 60) { e.state = 'idle'; e.angle = Math.atan2(player.worldY - e.y, player.worldX - e.x); e.targetX = e.x + Math.cos(e.angle)*(e.speed*speedMod*2.5)*30; e.targetY = e.y + Math.sin(e.angle)*(e.speed*speedMod*2.5)*30; }
@@ -5258,62 +6046,69 @@
                         if (levelTitleEl) levelTitleEl.innerText = isSurvivalLevel ? 'You Survived!' : 'Level Complete!';
                         showLevelCompleteSynopsis();
                         updateHUD(); playSFX('powerup_pickup'); document.getElementById('level-modal').style.display = 'block';
+                        runLevelCompleteSequence();
                     }
                 }
             }
 
-            for (let i = projectiles.length - 1; i >= 0; i--) {
-                let p = projectiles[i];
-                if (!isNearScreen(p.x, p.y)) { projectiles.splice(i, 1); continue; }
-                p.x += p.vx; p.y += p.vy; let hitObstacle = false;
-                    for (let j = companions.length - 1; j >= 0; j--) {
-                        let comp = companions[j];
-                        if (dist(p.x, p.y, comp.x, comp.y) < p.radius + comp.radius) {
-                            companions.splice(j, 1); // Slime dies
-                            projectiles.splice(i, 1); // Projectile eliminated
-                            playSFX('enemy_hit');
-                            hitObstacle = true;
-                            break;
+            // Gated on gameState==='playing' (rather than letting movement run unconditionally
+            // like before) so plasma orbs actually freeze while the game is paused - e.g. with
+            // a merchant dialogue or menu open - instead of silently continuing to travel/hit
+            // things offscreen while the player can't see or react to them.
+            if (gameState === 'playing') {
+                for (let i = projectiles.length - 1; i >= 0; i--) {
+                    let p = projectiles[i];
+                    if (!isNearScreen(p.x, p.y)) { projectiles.splice(i, 1); continue; }
+                    p.x += p.vx; p.y += p.vy; let hitObstacle = false;
+                        for (let j = companions.length - 1; j >= 0; j--) {
+                            let comp = companions[j];
+                            if (dist(p.x, p.y, comp.x, comp.y) < p.radius + comp.radius) {
+                                companions.splice(j, 1); // Slime dies
+                                projectiles.splice(i, 1); // Projectile eliminated
+                                playSFX('enemy_hit');
+                                hitObstacle = true;
+                                break;
+                            }
+                        }
+                        if (hitObstacle) continue;
+                    let nearTreesProj = getNearbyTrees(p.x, p.y);
+                    for (let ti = 0; ti < nearTreesProj.length; ti++) {
+                        let t = nearTreesProj[ti];
+                        let dx = p.x - t.x, dy = p.y - t.y;
+                        let th = p.radius + t.radius * 0.8;
+                        if (dx*dx + dy*dy < th*th) { hitObstacle = true; break; }
+                    }
+                    if (!hitObstacle) {
+                        let nearFencesProj = getNearbyFences(p.x, p.y);
+                        for (let fi = 0; fi < nearFencesProj.length; fi++) {
+                            let f = nearFencesProj[fi];
+                            let dx = f.x2 - f.x1, dy = f.y2 - f.y1;
+                            let lenSq = dx*dx + dy*dy;
+                            let t = lenSq > 0 ? ((p.x - f.x1) * dx + (p.y - f.y1) * dy) / lenSq : 0;
+                            t = Math.max(0, Math.min(1, t));
+                            let cx = f.x1 + t * dx, cy = f.y1 + t * dy;
+                            let ex = p.x - cx, ey = p.y - cy;
+                            let th = p.radius + fenceThickness;
+                            if (ex*ex + ey*ey < th*th) { hitObstacle = true; break; }
                         }
                     }
-                    if (hitObstacle) continue;
-                let nearTreesProj = getNearbyTrees(p.x, p.y);
-                for (let ti = 0; ti < nearTreesProj.length; ti++) {
-                    let t = nearTreesProj[ti];
-                    let dx = p.x - t.x, dy = p.y - t.y;
-                    let th = p.radius + t.radius * 0.8;
-                    if (dx*dx + dy*dy < th*th) { hitObstacle = true; break; }
-                }
-                if (!hitObstacle) {
-                    let nearFencesProj = getNearbyFences(p.x, p.y);
-                    for (let fi = 0; fi < nearFencesProj.length; fi++) {
-                        let f = nearFencesProj[fi];
-                        let dx = f.x2 - f.x1, dy = f.y2 - f.y1;
-                        let lenSq = dx*dx + dy*dy;
-                        let t = lenSq > 0 ? ((p.x - f.x1) * dx + (p.y - f.y1) * dy) / lenSq : 0;
-                        t = Math.max(0, Math.min(1, t));
-                        let cx = f.x1 + t * dx, cy = f.y1 + t * dy;
-                        let ex = p.x - cx, ey = p.y - cy;
-                        let th = p.radius + fenceThickness;
-                        if (ex*ex + ey*ey < th*th) { hitObstacle = true; break; }
+                    if (hitObstacle) { projectiles.splice(i, 1); continue; }
+                    
+                    if (dist(player.worldX, player.worldY, p.x, p.y) < player.radius + p.radius) {
+                        if (player.activePowerup === 'rampage') {
+                            let normAngle = Math.atan2(p.y - player.worldY, p.x - player.worldX); let speed = Math.hypot(p.vx, p.vy) * 1.3;
+                            p.vx = Math.cos(normAngle)*speed; p.vy = Math.sin(normAngle)*speed;
+                            let overlap = (player.radius + p.radius) - dist(player.worldX, player.worldY, p.x, p.y);
+                            p.x += Math.cos(normAngle)*overlap; p.y += Math.sin(normAngle)*overlap; p.deflected = true;
+                            screenShake = Math.max(screenShake, 5);
+                        } else if (isPlayerInvulnerable()) {
+                            spawnSplash(p.x, p.y); projectiles.splice(i, 1); continue;
+                        } else triggerGameOver('shooter');
                     }
-                }
-                if (hitObstacle) { projectiles.splice(i, 1); continue; }
-                
-                if (gameState === 'playing' && dist(player.worldX, player.worldY, p.x, p.y) < player.radius + p.radius) {
-                    if (player.activePowerup === 'rampage') {
-                        let normAngle = Math.atan2(p.y - player.worldY, p.x - player.worldX); let speed = Math.hypot(p.vx, p.vy) * 1.3;
-                        p.vx = Math.cos(normAngle)*speed; p.vy = Math.sin(normAngle)*speed;
-                        let overlap = (player.radius + p.radius) - dist(player.worldX, player.worldY, p.x, p.y);
-                        p.x += Math.cos(normAngle)*overlap; p.y += Math.sin(normAngle)*overlap; p.deflected = true;
-                        screenShake = Math.max(screenShake, 5);
-                    } else if (isPlayerInvulnerable()) {
-                        spawnSplash(p.x, p.y); projectiles.splice(i, 1); continue;
-                    } else triggerGameOver('shooter');
-                }
-                if (gameState === 'playing' && p.deflected) {
-                    for (let j = enemies.length - 1; j >= 0; j--) {
-                        if (dist(p.x, p.y, enemies[j].x, enemies[j].y) < p.radius + enemies[j].radius) { destroyEnemyByIndex(j, [1,2]); projectiles.splice(i, 1); break; }
+                    if (p.deflected) {
+                        for (let j = enemies.length - 1; j >= 0; j--) {
+                            if (dist(p.x, p.y, enemies[j].x, enemies[j].y) < p.radius + enemies[j].radius) { destroyEnemyByIndex(j, [1,2]); projectiles.splice(i, 1); break; }
+                        }
                     }
                 }
             }
@@ -6316,13 +7111,111 @@
             ctx.restore();
         }
 
+        // Wooden pier, placed at a hazard pool's shore edge by spawnHazardDocks() and extending
+        // out over the hazard. Scaled up via DOCK_SCALE (also used by isOnDock's hitbox, so the
+        // safe-to-stand area always matches what's drawn) and now doubles as safe ground: a
+        // player standing on the deck won't fall in even though the tile underneath is a hazard
+        // hole - see the isOnDock() check in the hazard-timer update. Drawn facing right by
+        // default and mirrored horizontally (never rotated, same convention as drawFishingScene)
+        // when faceLeft is set. 1-Bit skin gets a flat black/white treatment inline rather than a
+        // whole separate function, since the shape is simple enough not to need one.
+        function drawDock(x, y, faceLeft, seed) {
+            let isOnebit = player.color === 'onebit';
+            let plank = isOnebit ? '#ffffff' : '#a9764f';
+            let plankShade = isOnebit ? '#ffffff' : '#8a5f3d';
+            let plankEdge = isOnebit ? '#000000' : '#5c3d26';
+            let post = isOnebit ? '#000000' : '#6b4529';
+
+            ctx.save();
+            ctx.translate(x, y); if (faceLeft) ctx.scale(-1, 1);
+            ctx.scale(DOCK_SCALE, DOCK_SCALE);
+
+            // Two support posts sunk into the hazard, drawn first so the deck sits on top.
+            ctx.fillStyle = post;
+            ctx.fillRect(18, -6, 5, 20);
+            ctx.fillRect(44, -8, 5, 22);
+            if (!isOnebit) {
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.beginPath(); ctx.ellipse(20, 15, 6, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(46, 15, 6, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+                // Waterline moss/barnacle crust near the base of each post, a small band of
+                // mottled green-black flecks reading as "this wood sits in water".
+                ctx.fillStyle = 'rgba(60,90,40,0.55)';
+                for (let mi = 0; mi < 3; mi++) { ctx.beginPath(); ctx.ellipse(19 + mi * 1.6, 8 + (mi % 2) * 2, 1.6, 1.1, mi * 0.6, 0, Math.PI * 2); ctx.fill(); }
+                for (let mi = 0; mi < 3; mi++) { ctx.beginPath(); ctx.ellipse(45 + mi * 1.6, 9 + (mi % 2) * 2, 1.6, 1.1, mi * 0.6, 0, Math.PI * 2); ctx.fill(); }
+            }
+
+            // Deck: a short run of horizontal planks jutting from the shore, slightly angled
+            // corners so it doesn't read as a hard rectangle. Outlined for readability against
+            // both light ground and dark hazard textures.
+            ctx.fillStyle = plankEdge;
+            ctx.beginPath();
+            ctx.moveTo(-4, -12); ctx.lineTo(58, -14); ctx.lineTo(58, 10); ctx.lineTo(-4, 12); ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = plank;
+            ctx.beginPath();
+            ctx.moveTo(-2, -10); ctx.lineTo(55, -12); ctx.lineTo(55, 8); ctx.lineTo(-2, 10); ctx.closePath();
+            ctx.fill();
+
+            // Individual plank seams, alternating slightly lighter/darker for a wood-grain feel.
+            if (!isOnebit) {
+                for (let i = 0; i < 6; i++) {
+                    let px = -2 + i * 9.5;
+                    ctx.strokeStyle = plankShade; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(px, -11); ctx.lineTo(px - 1, 9); ctx.stroke();
+                }
+                // Small wood-grain knots, one per plank, seeded so they stay fixed across frames.
+                ctx.fillStyle = 'rgba(0,0,0,0.22)';
+                for (let i = 0; i < 5; i++) {
+                    let kx = 2 + i * 9.5 + Math.sin(seed + i * 3.1) * 2;
+                    let ky = -6 + Math.cos(seed + i * 2.4) * 5;
+                    ctx.beginPath(); ctx.ellipse(kx, ky, 1.4, 0.9, 0.3, 0, Math.PI * 2); ctx.fill();
+                }
+            } else {
+                for (let i = 0; i < 6; i++) {
+                    let px = -2 + i * 9.5;
+                    ctx.strokeStyle = '#000000'; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(px, -11); ctx.lineTo(px - 1, 9); ctx.stroke();
+                }
+            }
+
+            // A couple of low rope-and-post railings near the shore end for a lived-in touch.
+            ctx.strokeStyle = isOnebit ? '#000000' : '#4a3220'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(2, -11); ctx.lineTo(2, -20); ctx.moveTo(20, -12.5); ctx.lineTo(20, -21); ctx.stroke();
+            ctx.strokeStyle = isOnebit ? '#000000' : '#8a6a45'; ctx.lineWidth = 1.4;
+            ctx.beginPath(); ctx.moveTo(2, -19); ctx.quadraticCurveTo(11, -15, 20, -20); ctx.stroke();
+
+            // Metal cleat (a small double-horn tie-down) bolted to the deck near the shore end,
+            // with a rope looped over it in a figure-eight - the kind of detail that sells "boats
+            // actually tie up here" at a glance.
+            ctx.fillStyle = isOnebit ? '#000000' : '#7a7a7a';
+            ctx.fillRect(6, 0, 7, 2);
+            ctx.beginPath(); ctx.arc(7.5, 0, 1.6, Math.PI, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(11.5, 0, 1.6, Math.PI, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = isOnebit ? '#000000' : '#c9a876'; ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(6.5, 3); ctx.quadraticCurveTo(9.5, -1.5, 12.5, 3);
+            ctx.moveTo(6.5, 4.6); ctx.quadraticCurveTo(9.5, 1, 12.5, 4.6);
+            ctx.stroke();
+
+            // Coiled spare rope resting near the outer end of the deck.
+            ctx.strokeStyle = isOnebit ? '#000000' : '#b5895a'; ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.arc(44, 1, 5, 0, Math.PI * 2);
+            ctx.moveTo(47.5, 1); ctx.arc(44, 1, 3, 0, Math.PI * 2);
+            ctx.moveTo(45.5, 1); ctx.arc(44, 1, 1.4, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
         // Shared visual for both rare traders (skinTrader/goldTrader) - a small market stall
         // with a swaying cloth awning in the trader's accent color (purple for the dupe trader,
         // gold for the gold trader) and a floating badge icon overhead advertising what it
         // deals in, drawn with the same drawPixelIcon used for HUD item badges. Simpler than a
         // full posed character (see drawSeatedFisher) since there's no story beat riding on it -
         // just something that visibly reads as "shop" from a distance and is worth walking up to.
-        function drawTraderStall(x, y, seed, accentColor, accentShadow, iconType) {
+        function drawTraderStall(x, y, seed, accentColor, accentShadow, iconType, trader) {
             ctx.save();
             ctx.translate(x, y);
             drawGroundShadow(ctx, 0, 8, 26, 10);
@@ -6348,10 +7241,49 @@
                 ctx.beginPath(); ctx.arc(sx, -24, 3.5, 0, Math.PI); ctx.fill();
             }
 
-            // Counter/crate the goods sit on.
+            // Gacha-slime shopkeeper (random skin/hat rolled once in spawnRareTrader), drawn
+            // BEFORE the counter/crate below so the counter renders on top and occludes its
+            // lower half - reads as the slime standing behind the stall rather than floating in
+            // front of it. Smaller than the player's own slime (radius 11 vs 14) since it's a
+            // background prop, not something the player controls. Reuses drawCharacterModel
+            // exactly like the player slime - feeding it a fake vx during the yoo-hoo window
+            // pops its mouth open (gaspAmount) AND squishes its body (stretchX/Y) at the same
+            // time, since both already key off speed there, so no separate mouth/squish logic
+            // is needed here. The pulse runs twice (two "yoo" / "hoo" pops) in sync with the
+            // shop_yoohoo chime.
+            let yoohooElapsed = (trader && trader.mouthAnimStart) ? (Date.now() - trader.mouthAnimStart) : Infinity;
+            if (trader) {
+                let pulseDrive = 0;
+                if (yoohooElapsed >= 0 && yoohooElapsed < 900) {
+                    let local = yoohooElapsed % 450;
+                    pulseDrive = Math.sin((local / 450) * Math.PI);
+                }
+                let idleBob = Math.sin(Date.now() / 500 + seed) * 1;
+                drawCharacterModel(0, -10 + idleBob, pulseDrive * 10, 0, 11, trader.skinColorId || 'cyan', false, trader.hatId || null, ctx);
+            }
+
+            // Counter/crate the goods sit on - drawn after the shopkeeper slime above so its
+            // front edge overlaps/hides the slime's lower body.
             ctx.fillStyle = '#8a6135'; ctx.beginPath(); ctx.roundRect(-18, 2, 36, 14, 3); ctx.fill();
             ctx.strokeStyle = '#5c3f1f'; ctx.lineWidth = 1.5; ctx.strokeRect(-18, 2, 36, 14);
             ctx.beginPath(); ctx.moveTo(-18, 9); ctx.lineTo(18, 9); ctx.stroke();
+
+            // "Hey!" speech bubble, popping up beside the shopkeeper's head for a second or two
+            // right when the yoo-hoo chime/mouth-pop plays - fades in quickly, holds, then fades
+            // out, using the same mouthAnimStart timestamp so it's always in sync with the sound.
+            if (trader && trader.mouthAnimStart && yoohooElapsed >= 0 && yoohooElapsed < 1600) {
+                let bubbleAlpha = Math.min(1, yoohooElapsed / 120, (1600 - yoohooElapsed) / 350);
+                ctx.save();
+                ctx.globalAlpha = bubbleAlpha;
+                ctx.translate(17, -32);
+                ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#2b2d42'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.roundRect(-2, -12, 34, 18, 6); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(-9, 8); ctx.lineTo(0, 4); ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#2b2d42'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('Hey!', 15, -3);
+                ctx.restore();
+            }
 
             // Floating badge icon overhead, gently bobbing, advertising what this trader deals
             // in (skin dupes or gold) - same drawPixelIcon used for HUD item badges.
@@ -6708,6 +7640,7 @@
             for (let i = 0; i < skeletonChests.length; i++) { let sc = skeletonChests[i]; if (isOnScreen(sc.x + tiltX, sc.y + tiltY, cullBuffer)) pushRQ('skeletonchest', sc, sc.y + (sc.radius || 0)); }
             for (let i = 0; i < surviveChests.length; i++) { let sv = surviveChests[i]; if (isOnScreen(sv.x + tiltX, sv.y + tiltY, cullBuffer)) pushRQ('chest', sv, sv.y + (sv.radius || 0)); }
             if (fishingScene && isOnScreen(fishingScene.x + tiltX, fishingScene.y + tiltY, cullBuffer)) pushRQ('fishingScene', fishingScene, fishingScene.y + 20);
+            for (let i = 0; i < docks.length; i++) { let dk = docks[i]; if (isOnScreen(dk.x + tiltX, dk.y + tiltY, cullBuffer)) pushRQ('dock', dk, dk.y - 5); }
             if (skinTrader && isOnScreen(skinTrader.x + tiltX, skinTrader.y + tiltY, cullBuffer)) pushRQ('skinTrader', skinTrader, skinTrader.y + 20);
             if (goldTrader && isOnScreen(goldTrader.x + tiltX, goldTrader.y + tiltY, cullBuffer)) pushRQ('goldTrader', goldTrader, goldTrader.y + 20);
             pushRQ('player', player, player.worldY + (player.radius || 0));
@@ -7090,13 +8023,17 @@
                     let fs = item.obj;
                     drawFishingScene(fs.x, fs.y, fs.faceLeft, fs.seed);
                 }
+                else if (item.type === 'dock') {
+                    let dk = item.obj;
+                    drawDock(dk.x, dk.y, dk.faceLeft, dk.seed);
+                }
                 else if (item.type === 'skinTrader') {
                     let t = item.obj;
-                    drawTraderStall(t.x, t.y, t.seed, '#9b59b6', '#6c3483', 'skindupe');
+                    drawTraderStall(t.x, t.y, t.seed, '#9b59b6', '#6c3483', 'skindupe', t);
                 }
                 else if (item.type === 'goldTrader') {
                     let t = item.obj;
-                    drawTraderStall(t.x, t.y, t.seed, '#f1c40f', '#c77000', 'coin');
+                    drawTraderStall(t.x, t.y, t.seed, '#f1c40f', '#c77000', 'coin', t);
                 }
                 else if (item.type === 'leaf') {
                     let l = item.obj;
@@ -7241,7 +8178,7 @@
                     // Toxic Sludge: same radioactive glow overlay as enemies above, layered
                     // behind whatever skin the companion is already wearing.
                     if (cs.irradiated) drawRadioactiveGlow(ccx, ccy, cs.radius);
-                    drawCharacterModel(ccx, ccy, 0, 0, cs.radius, cs.colorId, false, null);
+                    drawCharacterModel(ccx, ccy, cs.vx || 0, cs.vy || 0, cs.radius, cs.colorId, false, null);
                     // Toxic Sludge: tint the companion's own body sickly green too, same as
                     // enemies above, on top of whatever skin it's already wearing.
                     if (cs.irradiated) drawIrradiatedTint(ccx, ccy, cs.radius);
@@ -7463,7 +8400,7 @@
             goalUnreachable = false; goalSeen = false;
             levelCoinsCollected = 0; levelCoinsPossible = 0;
             levelEnemiesKilled = 0; levelEnemiesSpawned = 0;
-            levelChestOpened = 0; levelChestPossible = 0;
+            levelChestOpened = 0; levelChestPossible = 0; levelSkeletonChestOpened = 0;
             levelItemsWon = [];
             clearTimeout(surviveAnnounceTimeout);
             if (domRefs.surviveAnnouncement) { domRefs.surviveAnnouncement.classList.remove('show'); domRefs.surviveAnnouncement.style.display = 'none'; }
@@ -7521,9 +8458,21 @@
             }
             document.getElementById('go-level').innerText = level;
             document.getElementById('go-best').innerText = (gameMode === 'endless') ? bestEndlessLevel : highestLevel;
+            // The story ending's game over gets a solid black backdrop instead of the usual
+            // dark-green/blurred one, to match the lights-out flicker that led into it. Reset
+            // back to the normal look for every other death reason so it doesn't linger.
+            let goScreenEl = document.getElementById('game-over-screen');
+            if (reason === 'story') {
+                goScreenEl.style.background = '#000';
+                goScreenEl.style.backdropFilter = 'none';
+            } else {
+                goScreenEl.style.background = '';
+                goScreenEl.style.backdropFilter = '';
+            }
             if (reason === 'time') document.getElementById('death-reason').innerText = "Out of Time!";
             else if (reason === 'hazard') { document.getElementById('death-reason').innerText = "Fell into the abyss!";
             }
+            else if (reason === 'story') { document.getElementById('death-reason').innerText = "It has always been this way."; }
             else { 
                 document.getElementById('death-reason').innerText = `Killed by: ${enemyDB[reason].name}`;
                 unlockAlmanacEntry(reason);
