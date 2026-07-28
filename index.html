@@ -3836,9 +3836,20 @@
             // (forced legendary-skin themes included) - see bossDB/bossIdByThemeIndex above.
             let stageBossId = bossIdByThemeIndex[themes.indexOf(currentTheme)];
             let stageBossChance = stageBossId ? bossChanceForLevel(level) : 0;
+            // BUG FIX: this used to be rolled independently for every one of up to ~32 enemy
+            // slots below, so by the time a run reached level ~20-30 the map filled with a
+            // dozen+ simultaneous bosses well before the intended level-50 milestone. Below
+            // level 50 at most one slot is allowed to become a boss (still gated by the same
+            // 0%->15%->~100% chance curve, just applied once); level 50+ is the deliberate
+            // "every enemy is a boss" swarm the spec calls for, applied deterministically to
+            // every slot rather than via a per-slot roll.
+            let bossSlotClaimed = false;
+            let forceAllSlotsBoss = level >= 50;
 
             for(let i=0; i < totalEnemies; i++) {
-                if (stageBossChance > 0 && Math.random() < stageBossChance) {
+                let spawnBossThisSlot = stageBossChance > 0 && (forceAllSlotsBoss || (!bossSlotClaimed && Math.random() < stageBossChance));
+                if (spawnBossThisSlot) {
+                    bossSlotClaimed = true;
                     let bDef = bossDB[stageBossId];
                     let bPos = getValidSpawn(350, bDef.radius);
                     let boss = {
@@ -9271,7 +9282,7 @@
             let tUpdateEnd = performance.now();
 
             // Leftover fraction of a timestep, used by draw() to interpolate rendered positions
-            // between  the previous and current physics tick (see SECTION 8).
+            // between the previous and current physics tick (see SECTION 8).
             renderAlpha = Math.min(1, accumulator / timeStep);
 
             draw();
