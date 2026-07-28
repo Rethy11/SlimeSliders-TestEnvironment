@@ -155,6 +155,14 @@
         .item-badge img { width: 20px; height: 20px; image-rendering: pixelated; }
         .item-badge.rarity-epic { border-color: #9b59b6; box-shadow: 0 0 6px rgba(155,89,182,0.6); }
         .item-badge.rarity-legendary { border-color: #ffcf33; box-shadow: 0 0 6px rgba(255,207,51,0.6); }
+        /* Mythic: the unique first-boss-kill drops, one tier above legendary. An animated
+           shifting-hue glow instead of a fixed color so it reads as "beyond" the fixed-color
+           tiers below it even at a glance. */
+        .item-badge.rarity-mythic { border-color: #ff3b6b; animation: mythicPulse 1.6s ease-in-out infinite; }
+        @keyframes mythicPulse {
+            0%, 100% { box-shadow: 0 0 6px rgba(255,59,107,0.7), 0 0 14px rgba(255,150,40,0.4); }
+            50% { box-shadow: 0 0 10px rgba(255,150,40,0.8), 0 0 20px rgba(255,59,107,0.6); }
+        }
         .item-count { position: absolute; bottom: -5px; right: -5px; background: #ff477e; color: #fff; font-size: 0.5rem; padding: 1px 4px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.5); min-width: 12px; text-align: center; line-height: 1.3; }
         #item-toast { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%) scale(0); background: #2b2d42; color: #fff; padding: 12px 24px; border-radius: 30px; font-weight: bold; z-index: 56; pointer-events: none; opacity: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.3); font-size: 0.7rem; display: flex; align-items: center; gap: 8px; }
 
@@ -283,6 +291,7 @@
         .item-rarity-name.rarity-common, .item-rarity-name.rarity-unknown { color: #fff; }
         .item-rarity-name.rarity-epic { color: #9b59b6; }
         .item-rarity-name.rarity-legendary { color: #ffcf33; }
+        .item-rarity-name.rarity-mythic { background: linear-gradient(90deg, #ff3b6b, #ff9628, #ff3b6b); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
         /* Compact almanac rows (enemies/items/achievements): just an icon + name that opens
            the shared detail modal on tap, rather than the old always-expanded icon+description
@@ -727,6 +736,153 @@
     <script src="sprites/shooter.js"></script>
     <script src="sprites/hopper.js"></script>
     <script src="sprites/mimic.js"></script>
+    <script>
+        // Boss sprites - drawn entirely in canvas (no external art assets) so they plug into
+        // the existing window.EnemySprites dispatch (see the 'enemy' render-queue case in
+        // SECTION 8) exactly like wanderer.js/dasher.js/etc do. Each boss shares one generic
+        // body-and-feedback wrapper (shadow, hit-flash, iframe tint, telegraph glow, HP pips)
+        // and supplies its own silhouette function for a bit of per-boss visual identity.
+        window.EnemySprites = window.EnemySprites || {};
+
+        function bossBobOffset(e) { return Math.sin((e.animTimer || 0) / 18) * (e.radius * 0.06); }
+
+        function drawBossHPPips(ctx, e) {
+            let n = e.maxHp || 3; let spacing = 16;
+            let startX = -((n - 1) * spacing) / 2;
+            let py = -e.radius - 26;
+            for (let i = 0; i < n; i++) {
+                let filled = i < e.hp;
+                ctx.beginPath(); ctx.arc(startX + i * spacing, py, 6, 0, Math.PI * 2);
+                ctx.fillStyle = filled ? '#ff3b5c' : 'rgba(40,40,40,0.55)';
+                ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#1a0a0a'; ctx.stroke();
+            }
+        }
+
+        // Silhouette functions - drawn centered at (0,0) facing along +x (toward e.angle,
+        // already rotated in by the wrapper), body radius r, given this boss's colors.
+        const bossSilhouettes = {
+            kingslime: (ctx, r, def, e) => {
+                ctx.fillStyle = def.bodyColor;
+                ctx.beginPath(); ctx.ellipse(0, r * 0.15, r, r * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = def.darkColor;
+                ctx.beginPath(); ctx.ellipse(0, r * 0.5, r * 0.8, r * 0.35, 0, 0, Math.PI); ctx.fill();
+                // Little jagged crown on top.
+                ctx.fillStyle = def.crownColor;
+                ctx.beginPath();
+                ctx.moveTo(-r * 0.4, -r * 0.55); ctx.lineTo(-r * 0.28, -r * 0.95); ctx.lineTo(-r * 0.12, -r * 0.6);
+                ctx.lineTo(0, -r * 1.05); ctx.lineTo(r * 0.12, -r * 0.6); ctx.lineTo(r * 0.28, -r * 0.95); ctx.lineTo(r * 0.4, -r * 0.55);
+                ctx.closePath(); ctx.fill();
+                // Eyes
+                ctx.fillStyle = '#0a2a12';
+                ctx.beginPath(); ctx.arc(-r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.arc(r * 0.28, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
+            },
+            desertlion: (ctx, r, def, e) => {
+                ctx.fillStyle = def.crownColor; // mane
+                ctx.beginPath(); ctx.arc(0, 0, r * 1.05, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = def.bodyColor;
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.72, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = def.darkColor;
+                ctx.beginPath(); ctx.ellipse(r * 0.35, r * 0.2, r * 0.28, r * 0.2, 0, 0, Math.PI * 2); ctx.fill(); // snout
+                ctx.fillStyle = '#1a1206';
+                ctx.beginPath(); ctx.arc(-r * 0.18, -r * 0.1, r * 0.1, 0, Math.PI * 2); ctx.arc(r * 0.22, -r * 0.1, r * 0.1, 0, Math.PI * 2); ctx.fill();
+            },
+            yeti: (ctx, r, def, e) => {
+                ctx.fillStyle = def.bodyColor;
+                ctx.beginPath(); ctx.ellipse(0, 0, r * 0.85, r, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = def.darkColor;
+                ctx.beginPath(); ctx.ellipse(0, r * 0.7, r * 0.6, r * 0.25, 0, 0, Math.PI * 2); ctx.fill(); // feet shadowline
+                // shaggy tufts
+                ctx.fillStyle = def.crownColor;
+                for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(i * r * 0.3, -r * 0.75, r * 0.18, 0, Math.PI * 2); ctx.fill(); }
+                ctx.fillStyle = '#123';
+                ctx.beginPath(); ctx.arc(-r * 0.22, -r * 0.05, r * 0.1, 0, Math.PI * 2); ctx.arc(r * 0.22, -r * 0.05, r * 0.1, 0, Math.PI * 2); ctx.fill();
+            },
+            lavaworm: (ctx, r, def, e) => {
+                // segmented worm body, 3 rounded segments trailing behind the head
+                ctx.fillStyle = def.darkColor;
+                for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(-r * (0.55 + i * 0.55), 0, r * (0.65 - i * 0.08), 0, Math.PI * 2); ctx.fill(); }
+                ctx.fillStyle = def.bodyColor;
+                ctx.beginPath(); ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = def.crownColor;
+                for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(-r * (0.4 + i * 0.5), 0, r * 0.14, 0, Math.PI * 2); ctx.fill(); }
+                ctx.fillStyle = '#3a0d02';
+                ctx.beginPath(); ctx.arc(-r * 0.2, -r * 0.12, r * 0.1, 0, Math.PI * 2); ctx.arc(r * 0.2, -r * 0.12, r * 0.1, 0, Math.PI * 2); ctx.fill();
+            },
+            crocodile: (ctx, r, def, e) => {
+                ctx.fillStyle = def.bodyColor;
+                ctx.beginPath(); ctx.ellipse(-r * 0.1, 0, r * 0.85, r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = def.darkColor;
+                ctx.beginPath(); ctx.ellipse(r * 0.55, 0, r * 0.4, r * 0.22, 0, 0, Math.PI * 2); ctx.fill(); // snout
+                ctx.fillStyle = def.crownColor;
+                for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.arc(i * r * 0.28, -r * 0.42, r * 0.08, 0, Math.PI * 2); ctx.fill(); } // back ridges
+                ctx.fillStyle = '#0e1503';
+                ctx.beginPath(); ctx.arc(r * 0.2, -r * 0.28, r * 0.09, 0, Math.PI * 2); ctx.arc(r * 0.42, -r * 0.2, r * 0.07, 0, Math.PI * 2); ctx.fill();
+            },
+            bear: (ctx, r, def, e) => {
+                ctx.fillStyle = def.bodyColor;
+                ctx.beginPath(); ctx.ellipse(0, 0, r * 0.85, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = def.darkColor;
+                ctx.beginPath(); ctx.arc(0, r * 0.25, r * 0.32, 0, Math.PI * 2); ctx.fill(); // snout
+                ctx.fillStyle = def.bodyColor;
+                ctx.beginPath(); ctx.arc(-r * 0.6, -r * 0.6, r * 0.28, 0, Math.PI * 2); ctx.arc(r * 0.6, -r * 0.6, r * 0.28, 0, Math.PI * 2); ctx.fill(); // ears
+                ctx.fillStyle = def.crownColor;
+                ctx.beginPath(); ctx.arc(-r * 0.6, -r * 0.6, r * 0.14, 0, Math.PI * 2); ctx.arc(r * 0.6, -r * 0.6, r * 0.14, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#1a0f08';
+                ctx.beginPath(); ctx.arc(-r * 0.24, -r * 0.15, r * 0.09, 0, Math.PI * 2); ctx.arc(r * 0.24, -r * 0.15, r * 0.09, 0, Math.PI * 2); ctx.fill();
+            }
+        };
+
+        function drawBossGeneric(ctx, e, player) {
+            let def = (typeof bossDB !== 'undefined') ? bossDB[e.bossId] : null;
+            if (!def) return; // safety net if the boss data isn't ready yet
+            let bob = bossBobOffset(e);
+            drawGroundShadow(ctx, e.x, e.y + e.radius * 0.85, e.radius * 0.9, e.radius * 0.35);
+
+            ctx.save();
+            ctx.translate(e.x, e.y + bob);
+
+            // Telegraph: a pulsing warning glow behind the boss while it winds up an attack.
+            if (e.state === 'telegraph') {
+                let t = (e.currentAttack && e.currentAttack.telegraph) ? e.stateTimer / e.currentAttack.telegraph : 0;
+                ctx.globalAlpha = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(Date.now() / 60));
+                ctx.fillStyle = '#ff2d2d';
+                ctx.beginPath(); ctx.arc(0, 0, e.radius * (1.1 + t * 0.5), 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+
+            // Squash/stretch: a light idle breathe, a bigger anticipation squash mid-telegraph,
+            // and a stretch-toward-target during the attack itself (charges/lunges especially).
+            let scaleX = 1, scaleY = 1;
+            if (e.state === 'telegraph') { scaleX = 1.08; scaleY = 0.9; }
+            else if (e.state === 'attack') { scaleX = 0.92; scaleY = 1.1; }
+            else { let breathe = Math.sin((e.animTimer || 0) / 24) * 0.03; scaleX = 1 + breathe; scaleY = 1 - breathe; }
+            ctx.scale(scaleX, scaleY);
+
+            // Face the player/movement direction without mirroring the hand-drawn silhouettes.
+            let facingRight = Math.cos(e.angle || 0) >= 0;
+            if (!facingRight) ctx.scale(-1, 1);
+
+            if (e.iframe > 0 && e.hp > 0) ctx.globalAlpha = 0.55 + 0.25 * Math.sin((e.iframe || 0) * 0.6);
+
+            let silhouette = bossSilhouettes[e.bossId];
+            if (silhouette) silhouette(ctx, e.radius, def, e);
+
+            if (e.hitFlash > 0) {
+                ctx.globalCompositeOperation = 'source-atop';
+                ctx.globalAlpha = Math.min(0.7, e.hitFlash / 24);
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath(); ctx.arc(0, 0, e.radius * 1.1, 0, Math.PI * 2); ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+            }
+            ctx.restore();
+
+            ctx.save(); ctx.translate(e.x, e.y);
+            drawBossHPPips(ctx, e);
+            ctx.restore();
+        }
+
+        window.EnemySprites.boss = drawBossGeneric;
+    </script>
     <script src="sprites/icon-almanac.js"></script>
     <script src="sprites/icon-settings.js"></script>
     <script src="sprites/icon-magnet.js"></script>
@@ -751,6 +907,8 @@
     <script src="sprites/icon-ach_footprint.js"></script>
     <script src="sprites/icon-ach_medal_silver.js"></script>
     <script src="sprites/icon-ach_medal_gold.js"></script>
+    <script src="sprites/icon-ach_model_student.js"></script>
+    <script src="sprites/icon-ach_perfectionist.js"></script>
     <script src="sprites/icon-ach_bug.js"></script>
     <script src="sprites/icon-ach_bestiary.js"></script>
     <script src="sprites/icon-ach_helmet.js"></script>
@@ -1090,6 +1248,11 @@
         // Reused/bucketed here instead - see the icicle/flame branches of the render loop for
         // why each one is safe to cache (identical output every time vs. bucketed by size).
         let icicleGradientCache = null;
+        // Mythic boss items fire their "attack mimic" bursts through the same icicles[] array
+        // (it already pierces/damages every enemy it touches, bosses included, with zero new
+        // collision code needed) - but they shouldn't visually read as ice. Any icicle tagged
+        // with a .tint gets its own cached gradient keyed by that color instead.
+        let mythicIcicleGradientCache = {};
         const flameGradientCache = new Map();
         // PERF: see drawSkyBackground (SECTION 8) - both cached the same way, keyed off
         // canvas.height so a resize correctly invalidates and rebuilds them.
@@ -1174,6 +1337,11 @@
         // Rendered as a pulsing/blinking red warning circle; when timer runs out the actual
         // enemy is spawned at that position and the telegraph is removed (see update()/draw()).
         let enemyTelegraphs = [];
+        // Ground AOE warnings for boss attacks: {x,y,radius,timer,duration,bossId}. Separate
+        // from enemyTelegraphs (survival-only enemy spawn warnings) since these resolve into
+        // an actual hit-check against the player rather than a spawn - see the resolution pass
+        // in update() and the drawing pass alongside enemyTelegraphs in draw().
+        let bossTelegraphs = [];
         let surviveAnnounceTimeout = null;
         // prevX/prevY hold the camera's position as of the start of the current physics tick;
         // x/y hold it after this tick's smoothing lerp runs. draw() blends between the two using
@@ -1359,6 +1527,10 @@
         // Roguelite run-items state: items acquired from chests/mimics that persist and stack
         // for the duration of a run (cleared on resetGame(), re-applied fresh each level).
         let runItems = {};
+        // Which boss ids have already handed out their unique mythic item this run - reset in
+        // resetGame(). Only the first kill of each boss type per run grants the item; repeat
+        // kills of the same boss (themes repeat every 6 levels) just drop normal bonus loot.
+        let bossItemsAwarded = {};
         let companions = [];
         let playerTrail = [];
         // Hex tiles the player has slid over while the Glacier ("ice") skin is equipped - these
@@ -1388,21 +1560,42 @@
         // stacking, and almanac behavior are otherwise untouched.
         const roguelikeItemDefs = {
             magnet:      { id: 'magnet',      rarity: 'common',    name: 'Magnet',      desc: 'Pulls nearby coins and gems toward you. Each stack widens the pull radius.' },
-            wings:       { id: 'wings',       rarity: 'common',    name: 'Wings',       desc: 'Lets you hover over a hazard longer before falling. Each stack adds more hover time.' },
-            spikes:      { id: 'spikes',      rarity: 'common',    name: 'Spikes',      desc: 'Periodically unleashes an icy shockwave around you. Each stack makes it fire more often.' },
+            wings:       { id: 'wings',       rarity: 'common',    name: 'Wings',       desc: 'Lets you hover over hazards longer before falling. Each stack extends hover time.' },
+            spikes:      { id: 'spikes',      rarity: 'common',    name: 'Spikes',      desc: 'Occasionally unleashes an icy shockwave around you. Each stack makes it fire more often.' },
             wilkshirianknowledge: { id: 'wilkshirianknowledge', rarity: 'common', name: 'Wilkshirian Knowledge', desc: 'Grants brief invulnerability on a recurring timer. Each stack shortens the wait between activations.', lockedBy: 'endless_level3' },
             // Dupe Shop exclusive (common) - never in rollRoguelikeItem's chest/mimic pools or
             // roguelikeTierPools (the Gold Trader's pool), so the only way to get it is buying
             // it from the Dupe Trader (see dupeShopStock()).
-            greedy:      { id: 'greedy',      rarity: 'common',    name: 'Greedy',      desc: 'Increases gold earned by 100%. Each stack adds another 100%.' },
-            slimefriend: { id: 'slimefriend', rarity: 'epic',      name: 'Slime Squad', desc: 'Summons a friendly companion slime that destroys enemies on contact. Each stack adds another companion.', lockedBy: 'level3' },
+            greedy:      { id: 'greedy',      rarity: 'common',    name: 'Greedy',      desc: 'Increases gold earned. Corrupts, wholly.' },
+            slimefriend: { id: 'slimefriend', rarity: 'epic',      name: 'Slime Squad', desc: 'Summons a slimy friend and makes you immune to other slimes. Each stack adds another companion.', lockedBy: 'level3' },
             plasmabeam:  { id: 'plasmabeam',  rarity: 'epic',      name: 'Plasma Beam', desc: 'Charges up, then zaps the nearest enemy in range. Each stack hits one more enemy and extends the range by a tile.', lockedBy: 'endless_level6' },
             // Dupe Shop exclusive (epic) - see note on greedy above.
-            devildeal:   { id: 'devildeal',   rarity: 'epic',      name: 'Devil Deal',  desc: 'Prevents death once, then is consumed. Each stack is another life saved.' },
+            devildeal:   { id: 'devildeal',   rarity: 'epic',      name: 'Devil Deal',  desc: 'Prevents death once. Zero downsides! ' },
             shuriken:    { id: 'shuriken',    rarity: 'legendary', name: 'Shuriken',    desc: 'Orbiting blades circle you, deflecting bullets and slaying enemies they touch. Each stack adds another blade.', lockedBy: 'centurion' },
-            skeletonkey: { id: 'skeletonkey', rarity: 'legendary', name: 'Skeleton Key', desc: 'Spawns an extra skeleton chest each stage. Each stack adds another chest. Skeleton chests never hold legendaries.', lockedBy: 'endless_level9' },
+            skeletonkey: { id: 'skeletonkey', rarity: 'legendary', name: 'Skeleton Key', desc: 'Spawns an extra skeleton chest per stack each stage. Skeleton chests can’t contain legendary items.', lockedBy: 'endless_level9' },
             // Dupe Shop exclusive (legendary) - see note on greedy above.
-            spectre:     { id: 'spectre',     rarity: 'legendary', name: 'Spectre',     desc: 'Pass through walls and obstacles, gaining a brief speed boost each time. Each stack boosts it further.' }
+            spectre:     { id: 'spectre',     rarity: 'legendary', name: 'Spectre',     desc: 'Pass through walls and obstacles, gaining a brief speed boost that stacks. Your mortal soul, forfeit.' },
+
+            // ---- Mythic: unique boss drops ----
+            // One tier above legendary (see .rarity-mythic in CSS), and deliberately absent
+            // from rollRoguelikeItem/roguelikeTierPools/dupeShopStock - like greedy/devildeal/
+            // spectre these are exclusive to a single source, but that source is defeating a
+            // stage's boss for the first time in a run (see the isBoss branch in
+            // destroyEnemyByIndex). Each mimics one of its boss's own attacks as a recurring
+            // passive proc (reusing the icicles[] projectile - it already damages every enemy,
+            // bosses included, on contact) plus a bit of extra utility beyond just the attack.
+            mythic_kingslime: { id: 'mythic_kingslime', rarity: 'mythic', bossId: 'kingslime', name: 'Royal Jelly',
+                desc: 'Periodically splits off slime globs that seek out and pop enemies, mimicking King Slime\'s own Slime Split - and pulls in any loot they knock loose. Each stack fires more globs and more often.' },
+            mythic_desertlion: { id: 'mythic_desertlion', rarity: 'mythic', bossId: 'desertlion', name: 'Sandstorm Mane',
+                desc: 'Periodically unleashes a Roar Shockwave of your own, and the recoil gives you a burst of Sand Pounce speed. Each stack fires more shards and more often.' },
+            mythic_yeti: { id: 'mythic_yeti', rarity: 'mythic', bossId: 'yeti', name: 'Frostbound Horn',
+                desc: 'Periodically triggers an Ice Slam around you, the frost numbing you to harm for a moment after. Each stack fires more shards and more often.' },
+            mythic_lavaworm: { id: 'mythic_lavaworm', rarity: 'mythic', bossId: 'lavaworm', name: 'Molten Core',
+                desc: 'Periodically erupts in a Magma Burst of embers, melting a little extra gold out of the ground each time. Each stack fires more embers and more often.' },
+            mythic_crocodile: { id: 'mythic_crocodile', rarity: 'mythic', bossId: 'crocodile', name: 'Ancient Jaws',
+                desc: 'Periodically lashes out with a Tail Sweep and snaps any nearby projectiles out of the air. Each stack fires more shards and more often.' },
+            mythic_bear: { id: 'mythic_bear', rarity: 'mythic', bossId: 'bear', name: 'Timberclaw',
+                desc: 'Periodically slams the ground in a Ground Pound that also shoves every nearby enemy back. Each stack fires more shards and more often.' }
         };
 
         // Achievement definitions. Each check() reads from persisted storage / in-memory state
@@ -1428,8 +1621,9 @@
             { id: 'bug_hunter',      name: 'Bug Hunter',         desc: 'Encounter 3 different enemies.',              icon: 'ach_bug',          check: () => Object.keys(enemyDB).filter(k => storage.get('almanac_' + k) === 'true').length >= 3 },
             { id: 'bestiary',        name: 'Bestiary Complete',  desc: 'Encounter every enemy in the game.',          icon: 'ach_bestiary',     check: () => Object.keys(enemyDB).every(k => storage.get('almanac_' + k) === 'true') },
             { id: 'centurion',       name: 'Centurion',          desc: 'Defeat 100 enemies.',                         icon: 'ach_helmet',       check: () => (parseInt(storage.get('totalEnemyKills')) || 0) >= 100 },
-            { id: 'loadout_ready',   name: 'Loadout Ready',      desc: 'Find every run item at least once.',         icon: 'ach_backpack',     check: () => Object.keys(roguelikeItemDefs).every(id => storage.get('runitem_' + id) === 'true') },
+            { id: 'loadout_ready',   name: 'Loadout Ready',      desc: 'Find every run item at least once.',         icon: 'ach_backpack',     check: () => Object.keys(roguelikeItemDefs).filter(id => roguelikeItemDefs[id].rarity !== 'mythic').every(id => storage.get('runitem_' + id) === 'true') },
             { id: 'legendary_find',  name: 'Ultimate Ninja',     desc: 'Have 3 Shurikens at once.',                    icon: 'ach_legendary',    check: () => (parseInt(storage.get('maxShurikenStack')) || 0) >= 3 },
+            { id: 'boss_slayer',     name: 'Trophy Room',        desc: 'Find all 6 unique boss items.',               icon: 'ach_bestiary',     check: () => Object.keys(roguelikeItemDefs).filter(id => roguelikeItemDefs[id].rarity === 'mythic').every(id => storage.get('runitem_' + id) === 'true') },
             { id: 'my_slime',        name: 'My Slime',           desc: 'Have 3 Slime Squad companions at once.',      icon: 'ach_companion',    check: () => (parseInt(storage.get('maxSlimefriendStack')) || 0) >= 3 },
             { id: 'cult_leader',     name: 'Cult Leader',        desc: 'Have 5 Slime Squad companions at once.',      icon: 'ach_cult',         check: () => (parseInt(storage.get('maxSlimefriendStack')) || 0) >= 5 },
             { id: 'gacha_addict',    name: 'Gacha Addict',       desc: 'Pull the gacha crane 10 times.',              icon: 'ach_crane',        check: () => (parseInt(storage.get('gachaPullCount') || 0)) >= 10 },
@@ -1585,7 +1779,7 @@
             "Without further use this boy ceased as well, and was forgotten.",
             "Now the boy saw his mother for the first time, she had dark brown hair, hazel eyes and an olive green colored turtleneck.",
             "Her skin was a soft, rosy shade of peach.",
-            "The room they were in was bright and exiting, and being inside of it seemed underlyingly blissful.",
+            "The room they were in was bright and exciting, and being inside of it seemed underlyingly blissful.",
             "The boy stayed in it for a short period of time, but a hand appeared at the door to the room and when the boy approached it he was dragged outside.",
             "The warm feeling stopped instantaneously, and the boy recognized the man who was his father.",
             "The house was dark and sad, lichen covered some of the walls and gave the house a green hue.",
@@ -1602,13 +1796,7 @@
             "The boy sat with a man he did not recognize, fishing in a lake that was made of glass with stars above that did not seem quite right.",
             "But nothing seemed amiss."
         ];
-        // TEST BUILD OVERRIDE: force the story to start one pair from the end regardless of
-        // saved progress, so the very next man-and-boy encounter (level 1 always spawns one -
-        // see spawnChance above) goes straight into the final dialogue pair, the story-ending
-        // epilogue, the flicker/buzz, and the black game-over screen. Remove this override line
-        // to go back to normal save-driven progress.
-        let fishingStoryIndex = fishingStorySentences.length - 2;
-        storage.set('landSlidersStoryComplete', 'false');
+        let fishingStoryIndex = parseInt(storage.get('landSlidersFishingIndex')) || 0;
         // fishingStoryIndex === fishingStorySentences.length is a valid, deliberate state (the
         // story has been fully read and shouldn't wrap back to the start on reload) - only
         // out-of-range or corrupt values get reset to 0.
@@ -1634,7 +1822,7 @@
         const storyEndingSegments = [
             "A widened perspective would first reveal a dilapidated, very old house with three skeletons held together by clay, sitting in a room, and the carcasses of two dogs laying directly outside, where they had pawed to be let in for 35 days before succumbing to hunger and consuming one another, though this event took place long ago.",
             "Go even farther out and you would notice a glass serving dish’s round top, covering the house in an effort to preserve what was inside.",
-            "The next level out would reveal a glass prism like container holding everything else, though the prism was two prisms, one with the top facing up, and the other with the top facing down, balancing perfectly on top of one of the tips of the prisms, though it was unnecessary, as it was inside of a vacuum, with a glass sphere sealing the vacuum a level higher.",
+            "The next level out would reveal a glass prism-like container holding everything else, though the prism was two prisms, one with the top facing up, and the other with the top facing down, balancing perfectly on top of one of the tips of the prisms, though it was unnecessary, as it was inside of a vacuum, with a glass sphere sealing the vacuum a level higher.",
             "Finally you would see that hundreds of thousands of similar tiny spheres filled up a sand hourglass on the desk of a man you would describe as \"eccentric.\"\nAnd all of this was as it is written, for that is how it must be, and has always been."
         ];
         let storyEndingIndex = 0;
@@ -1653,10 +1841,187 @@
             wanderer: { name: 'Slime', desc: 'Legend has it that eating slime can grant eternal life… Yuck.' },
             dasher:   { name: 'Bull', desc: 'Charges blindly. Easy to trick.' },
             chaser:   { name: 'Bee', desc: 'Defends its hive. Don’t get too close!' },
-            shooter:  { name: 'Evil Eye', desc: 'Keeps its distance and fires slow-moving plasma orbs.' },
+            shooter:  { name: 'Evil Eye', desc: 'Keeps its distance and fires slow-moving plasma orbs. Avoids being touched at all costs.' },
             hopper:   { name: 'Frog', desc: 'Targets a fly and jumps high to catch it. Apparently can’t swim.' },
-            mimic:    { name: 'Chest Mimic', desc: 'Curiosity killed the… Slime?' }
+            mimic:    { name: 'Chest Mimic', desc: 'Curiosity killed the… Slime?' },
+            boss_kingslime:  { name: 'King Slime',   desc: 'The bloated ruler of the forest. Splits itself into lesser slimes when angered. 3 hits to topple.' },
+            boss_desertlion: { name: 'Desert Lion',  desc: 'A great maned beast of the dunes. Roars a shockwave and pounces like a sandstorm. 3 hits to topple.' },
+            boss_yeti:       { name: 'Yeti',         desc: 'A towering ice-beast of the frozen peaks. Slams the ground and breathes killing frost. 3 hits to topple.' },
+            boss_lavaworm:   { name: 'Lava Worm',    desc: 'Burrows through molten rock, erupting in showers of magma. 3 hits to topple.' },
+            boss_crocodile:  { name: 'Crocodile',    desc: 'An ancient swamp predator. Death-rolls and snaps with a bone-crushing bite. 3 hits to topple.' },
+            boss_bear:       { name: 'Bear',         desc: 'A hulking woodland brute. Pounds the earth and swipes with claws like falling branches. 3 hits to topple.' }
         };
+
+        // ==========================================
+        // BOSS SYSTEM
+        // One boss per main stage theme (same order as `themes`/musicFiles: forest, desert,
+        // snow, volcano, swamp, autumn). Bosses are just enemy objects with type:'boss' and
+        // isBoss:true, so they flow through the existing enemies[] array, render queue, and
+        // destroyEnemyByIndex() choke point untouched - see the isBoss branch added there.
+        // Each takes 3 "hits" (any existing kill-trigger: powerup contact, fire/lightning/ice,
+        // deflected projectile, icicle, companion touch) to defeat, with a long invulnerability
+        // window between hits so it can't be melted in one tick by e.g. fire breath's fast tick
+        // rate. Each has 3 unique telegraphed attacks, cycled in order so a player is guaranteed
+        // to see all three across a fight.
+        // ==========================================
+        const BOSS_HITS_REQUIRED = 3;
+        const BOSS_IFRAME_FRAMES = 95; // ~1.6s @60fps - "long Iframes between each hit"
+
+        // Rare-replace chance for a regular enemy spawn slot to become this level's boss
+        // instead: zero on stages 1-6, jumps to 15% on stage 7, scales linearly up to 100%
+        // at level 50 (every enemy slot becomes a boss from level 50 on).
+        function bossChanceForLevel(lvl) {
+            if (lvl < 7) return 0;
+            if (lvl >= 50) return 1;
+            return 0.15 + (lvl - 7) * (0.85 / 43);
+        }
+
+        function bossFireRadial(e, count, speed, projRadius) {
+            for (let i = 0; i < count; i++) {
+                let a = (i / count) * Math.PI * 2 + (e.animTimer || 0) * 0.001;
+                projectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, radius: projRadius || 9, bossId: e.bossId });
+            }
+        }
+        function bossFireAimedSpread(e, count, spreadRad, speed, projRadius) {
+            let base = Math.atan2(player.worldY - e.y, player.worldX - e.x);
+            for (let i = 0; i < count; i++) {
+                let t = count === 1 ? 0 : (i / (count - 1)) - 0.5;
+                let a = base + t * spreadRad;
+                projectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, radius: projRadius || 9, bossId: e.bossId });
+            }
+        }
+        function bossTelegraphAoe(e, x, y, radius, delayFrames) {
+            bossTelegraphs.push({ x, y, radius, timer: delayFrames, duration: delayFrames, bossId: e.bossId });
+        }
+
+        // Every boss attack: { name, telegraph (frames of windup), duration (frames the attack
+        // itself plays out over), cooldown (frames of recovery before the next pick), exec(e)
+        // fired once when telegraph ends, tick(e) optional per-frame logic during 'attack'. }
+        const bossDB = {
+            kingslime: {
+                themeIndex: 0, radius: 46, speedMult: 0.65, name: 'King Slime',
+                bodyColor: '#3fd67a', darkColor: '#1f8a4c', crownColor: '#ffd23f',
+                attacks: [
+                    { // Slime Split - lobs 5 small gobs outward in a ring
+                        name: 'Slime Split', telegraph: 70, duration: 20, cooldown: 150,
+                        exec: (e) => { playSFX('enemy_hit'); bossFireRadial(e, 5, 3.2, 8); screenShake = Math.max(screenShake, 6); }
+                    },
+                    { // Bounce Slam - jumps then slams down with a telegraphed shockwave AOE
+                        name: 'Bounce Slam', telegraph: 55, duration: 40, cooldown: 160,
+                        exec: (e) => { e.slamTargetX = player.worldX; e.slamTargetY = player.worldY; bossTelegraphAoe(e, e.slamTargetX, e.slamTargetY, 90, 40); },
+                        tick: (e) => { let t = e.stateTimer / 40; e.x += (e.slamTargetX - e.x) * 0.06; e.y += (e.slamTargetY - e.y) * 0.06; if (e.stateTimer === 39) { screenShake = Math.max(screenShake, 10); playSFX('enemy_hit'); } }
+                    },
+                    { // Sticky Spit - 3-shot aimed spread
+                        name: 'Sticky Spit', telegraph: 60, duration: 15, cooldown: 130,
+                        exec: (e) => { playSFX('eye_fire'); bossFireAimedSpread(e, 3, 0.5, 4.2, 9); }
+                    }
+                ]
+            },
+            desertlion: {
+                themeIndex: 1, radius: 42, speedMult: 1.05, name: 'Desert Lion',
+                bodyColor: '#d9a441', darkColor: '#8a5a1e', crownColor: '#6b3f16',
+                attacks: [
+                    { // Sand Pounce - fast charge toward the player, dasher-style
+                        name: 'Sand Pounce', telegraph: 65, duration: 55, cooldown: 150,
+                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                        tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 3.2; e.y += Math.sin(e.chargeAngle) * e.speed * 3.2; }
+                    },
+                    { // Roar Shockwave - full-ring bullet-hell burst
+                        name: 'Roar Shockwave', telegraph: 75, duration: 20, cooldown: 170,
+                        exec: (e) => { playSFX('lightning'); bossFireRadial(e, 10, 3.6, 7); screenShake = Math.max(screenShake, 8); }
+                    },
+                    { // Sandstorm Claws - quick 3-swipe fan of close-range shots
+                        name: 'Sandstorm Claws', telegraph: 50, duration: 30, cooldown: 130,
+                        exec: (e) => { e._clawTicks = 3; },
+                        tick: (e) => { if (e._clawTicks > 0 && e.stateTimer % 10 === 0) { bossFireAimedSpread(e, 3, 0.8, 5, 8); e._clawTicks--; playSFX('enemy_hit'); } }
+                    }
+                ]
+            },
+            yeti: {
+                themeIndex: 2, radius: 44, speedMult: 0.7, name: 'Yeti',
+                bodyColor: '#eef7fb', darkColor: '#a9c9d6', crownColor: '#4fa3c7',
+                attacks: [
+                    { // Ice Slam - telegraphed ground AOE plus an outward ring of icicle shards
+                        name: 'Ice Slam', telegraph: 70, duration: 20, cooldown: 160,
+                        exec: (e) => { bossTelegraphAoe(e, e.x, e.y, 110, 30); bossFireRadial(e, 8, 3, 7); playSFX('ice_nova'); }
+                    },
+                    { // Frost Breath - slow-moving cone of projectiles toward the player
+                        name: 'Frost Breath', telegraph: 60, duration: 45, cooldown: 170,
+                        exec: (e) => { e._breathTicks = 6; },
+                        tick: (e) => { if (e._breathTicks > 0 && e.stateTimer % 8 === 0) { bossFireAimedSpread(e, 2, 0.35, 2.6, 8); e._breathTicks--; } }
+                    },
+                    { // Avalanche Charge - charges across the map leaving a trail of icicle shards
+                        name: 'Avalanche Charge', telegraph: 65, duration: 60, cooldown: 170,
+                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                        tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 2.4; e.y += Math.sin(e.chargeAngle) * e.speed * 2.4; if (e.stateTimer % 12 === 0) projectiles.push({ x: e.x, y: e.y, vx: 0, vy: 0.01, radius: 10, bossId: e.bossId }); }
+                    }
+                ]
+            },
+            lavaworm: {
+                themeIndex: 3, radius: 48, speedMult: 0.55, name: 'Lava Worm',
+                bodyColor: '#ff6a2b', darkColor: '#9c2b0e', crownColor: '#ffcf4a',
+                attacks: [
+                    { // Magma Burst - erupting ring of embers
+                        name: 'Magma Burst', telegraph: 70, duration: 20, cooldown: 160,
+                        exec: (e) => { playSFX('fire'); bossFireRadial(e, 9, 3.4, 8); screenShake = Math.max(screenShake, 8); }
+                    },
+                    { // Burrow Strike - vanishes briefly then erupts under the player with a telegraphed AOE
+                        name: 'Burrow Strike', telegraph: 80, duration: 25, cooldown: 180,
+                        exec: (e) => { e.burrowed = true; e.slamTargetX = player.worldX; e.slamTargetY = player.worldY; bossTelegraphAoe(e, e.slamTargetX, e.slamTargetY, 100, 45); },
+                        tick: (e) => { if (e.stateTimer === 24) { e.x = e.slamTargetX; e.y = e.slamTargetY; e.burrowed = false; screenShake = Math.max(screenShake, 10); playSFX('enemy_hit'); } }
+                    },
+                    { // Ember Spray - rotating spiral of embers over a few ticks
+                        name: 'Ember Spray', telegraph: 60, duration: 40, cooldown: 160,
+                        exec: (e) => { e._sprayTicks = 5; e._sprayAngle = Math.random() * Math.PI * 2; },
+                        tick: (e) => { if (e._sprayTicks > 0 && e.stateTimer % 8 === 0) { e._sprayAngle += 0.9; for (let i = 0; i < 3; i++) { let a = e._sprayAngle + i * (Math.PI * 2 / 3); projectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, radius: 7, bossId: e.bossId }); } e._sprayTicks--; } }
+                    }
+                ]
+            },
+            crocodile: {
+                themeIndex: 4, radius: 44, speedMult: 0.85, name: 'Crocodile',
+                bodyColor: '#5a7a2e', darkColor: '#33471a', crownColor: '#dfe6b0',
+                attacks: [
+                    { // Tail Sweep - a 180 degree sweeping arc of projectiles
+                        name: 'Tail Sweep', telegraph: 65, duration: 35, cooldown: 150,
+                        exec: (e) => { e._sweepStep = 0; e._sweepBase = Math.atan2(player.worldY - e.y, player.worldX - e.x) - Math.PI / 2; },
+                        tick: (e) => { if (e.stateTimer % 6 === 0 && e._sweepStep <= 6) { let a = e._sweepBase + (e._sweepStep / 6) * Math.PI; projectiles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 4, vy: Math.sin(a) * 4, radius: 8, bossId: e.bossId }); e._sweepStep++; } }
+                    },
+                    { // Death Roll - short charge that ends in a full-ring burst
+                        name: 'Death Roll', telegraph: 60, duration: 45, cooldown: 170,
+                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                        tick: (e) => { if (e.stateTimer < 30) { e.x += Math.cos(e.chargeAngle) * e.speed * 2.6; e.y += Math.sin(e.chargeAngle) * e.speed * 2.6; } if (e.stateTimer === 30) { bossFireRadial(e, 8, 3.4, 8); screenShake = Math.max(screenShake, 8); playSFX('lightning'); } }
+                    },
+                    { // Snap Lunge - quick short dash bite with a brief AOE at the mouth
+                        name: 'Snap Lunge', telegraph: 45, duration: 20, cooldown: 120,
+                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); bossTelegraphAoe(e, e.x + Math.cos(e.chargeAngle) * 70, e.y + Math.sin(e.chargeAngle) * 70, 55, 20); },
+                        tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 1.6; e.y += Math.sin(e.chargeAngle) * e.speed * 1.6; }
+                    }
+                ]
+            },
+            bear: {
+                themeIndex: 5, radius: 44, speedMult: 0.75, name: 'Bear',
+                bodyColor: '#7a5233', darkColor: '#4a2f1c', crownColor: '#c98a4b',
+                attacks: [
+                    { // Ground Pound - telegraphed AOE shockwave ring
+                        name: 'Ground Pound', telegraph: 70, duration: 20, cooldown: 160,
+                        exec: (e) => { bossTelegraphAoe(e, e.x, e.y, 120, 35); },
+                        tick: (e) => { if (e.stateTimer === 34) { bossFireRadial(e, 8, 3, 7); screenShake = Math.max(screenShake, 9); playSFX('enemy_hit'); } }
+                    },
+                    { // Charge Swipe - dash across the arena leaving a projectile trail
+                        name: 'Charge Swipe', telegraph: 60, duration: 50, cooldown: 160,
+                        exec: (e) => { e.chargeAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x); playSFX('bull_charge'); },
+                        tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 2.5; e.y += Math.sin(e.chargeAngle) * e.speed * 2.5; if (e.stateTimer % 10 === 0) projectiles.push({ x: e.x, y: e.y, vx: 0, vy: 0.01, radius: 9, bossId: e.bossId }); }
+                    },
+                    { // Leaf Fling - 3-way spread
+                        name: 'Leaf Fling', telegraph: 55, duration: 15, cooldown: 130,
+                        exec: (e) => { playSFX('eye_fire'); bossFireAimedSpread(e, 3, 0.6, 4, 8); }
+                    }
+                ]
+            }
+        };
+        // themeIndex -> bossId, built once for O(1) lookup during level generation.
+        const bossIdByThemeIndex = {};
+        Object.keys(bossDB).forEach(id => { bossIdByThemeIndex[bossDB[id].themeIndex] = id; });
 
         const powerupTypes = [
             { id: 'fire',      name: 'Fire Breath', desc: 'Fire Breath', color: '#ff6b35', duration: 6, radius: 150, tick: 0.08, mode: 'cone',     coinDrop: [2,4] },
@@ -2217,55 +2582,6 @@
         }
 
         // ---- Hand-drawn pixel-icon sprites (replaces all emoji) ----
-        // Shared drawer for the Model Student / Perfectionist achievement badges: a miniature
-        // version of the #level-grade-badge rosette (pleated rim + medal + two small ribbon
-        // tails + "A+"), rather than a generic star/medal. c1/c2 are that achievement's two
-        // grade-rosette accent colors; everything else (the pleat divider ring, tail trim, and
-        // the outer backing ring behind the pleats) stays a consistent gold, since every other
-        // achievement badge in the game reads as a solid gold medal and this should still read
-        // as one of those first, with the rosette colors as an accent rather than replacing the
-        // gold entirely.
-        function drawRosetteAchievementIcon(tctx, s, c1, c2) {
-            const gold1 = '#ffe27a', gold2 = '#c77000';
-            // Solid gold backing disc, slightly larger than the pleats, standing in for a medal's
-            // rim - this is what keeps the badge reading as "gold medal" at a glance.
-            tctx.fillStyle = gold2; tctx.beginPath(); tctx.arc(0, 0, 10.5 * s, 0, Math.PI * 2); tctx.fill();
-            tctx.fillStyle = gold1; tctx.beginPath(); tctx.arc(0, 0, 10 * s, 0, Math.PI * 2); tctx.fill();
-            // Pleated sunburst rim: alternating grade-colored wedges over the gold backing.
-            const wedges = 10;
-            for (let i = 0; i < wedges; i++) {
-                let a0 = (Math.PI * 2 / wedges) * i, a1 = (Math.PI * 2 / wedges) * (i + 1);
-                tctx.fillStyle = i % 2 === 0 ? c1 : c2;
-                tctx.beginPath(); tctx.moveTo(0, 0); tctx.arc(0, 0, 9 * s, a0, a1); tctx.closePath(); tctx.fill();
-            }
-            // Two small ribbon tails hanging below, flared outward like the level-complete
-            // rosette, trimmed in gold to tie back into the medal rim.
-            [-1, 1].forEach(side => {
-                tctx.save();
-                tctx.translate(side * 2.4 * s, 6.5 * s);
-                tctx.rotate(side * 0.3);
-                tctx.fillStyle = c2;
-                tctx.beginPath();
-                tctx.moveTo(-1.5 * s, 0); tctx.lineTo(1.5 * s, 0);
-                tctx.lineTo(1.5 * s, 4 * s); tctx.lineTo(0.7 * s, 3 * s); tctx.lineTo(0, 4 * s);
-                tctx.lineTo(-0.7 * s, 3 * s); tctx.lineTo(-1.5 * s, 4 * s);
-                tctx.closePath(); tctx.fill();
-                tctx.strokeStyle = gold1; tctx.lineWidth = 0.5 * s; tctx.stroke();
-                tctx.restore();
-            });
-            // Medal face + gold rim, letter last so it sits above everything.
-            let grad = tctx.createRadialGradient(-2 * s, -2.5 * s, 1 * s, 0, 0, 6.5 * s);
-            grad.addColorStop(0, c1); grad.addColorStop(1, c2);
-            tctx.fillStyle = grad;
-            tctx.beginPath(); tctx.arc(0, 0, 6.5 * s, 0, Math.PI * 2); tctx.fill();
-            tctx.strokeStyle = gold1; tctx.lineWidth = 1 * s; tctx.beginPath(); tctx.arc(0, 0, 6.5 * s, 0, Math.PI * 2); tctx.stroke();
-            tctx.fillStyle = '#fff';
-            tctx.font = 'bold ' + (6.5 * s) + 'px sans-serif';
-            tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
-            tctx.shadowColor = 'rgba(0,0,0,0.55)'; tctx.shadowBlur = 1 * s;
-            tctx.fillText('A+', 0, 0.3 * s);
-            tctx.shadowBlur = 0;
-        }
         function drawPixelIcon(type, tctx, x, y, size) {
             tctx.save(); tctx.translate(x, y);
             const s = size / 24;
@@ -2404,22 +2720,48 @@
                     tctx.fillStyle = '#90a4ae'; tctx.strokeStyle = '#37474f';
                     tctx.beginPath(); tctx.roundRect(-2*s,-3*s,10*s,10*s,2*s); tctx.fill(); tctx.stroke();
                     break;
-                // Model Student (Classic A+) and Perfectionist (Endless Waves A+): both use the
-                // shared mini grade-rosette drawer above, colored to match this game's actual
-                // grade-A+ rosette accents - yellow/green for Classic, yellow/red for Endless -
-                // rather than living as external sprites/ files like the other ach_* icons.
-                case 'ach_model_student':
-                    drawRosetteAchievementIcon(tctx, s, '#fff59d', '#2ecc71');
+                // Mythic boss items - simplified single-color echoes of each boss's own icon
+                // element (see bossSilhouettes in the boss-sprites <script> block), so they read
+                // as "belongs to that boss" at a glance even at badge size.
+                case 'mythic_kingslime':
+                    tctx.fillStyle = '#3fd67a'; tctx.beginPath(); tctx.arc(0,2*s,8*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#ffd23f';
+                    tctx.beginPath(); tctx.moveTo(-5*s,-3*s); tctx.lineTo(-3*s,-9*s); tctx.lineTo(0,-4*s); tctx.lineTo(3*s,-9*s); tctx.lineTo(5*s,-3*s); tctx.closePath(); tctx.fill();
                     break;
-                case 'ach_perfectionist':
-                    drawRosetteAchievementIcon(tctx, s, '#fff59d', '#c0392b');
+                case 'mythic_desertlion':
+                    tctx.fillStyle = '#6b3f16'; tctx.beginPath(); tctx.arc(0,0,10*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#d9a441'; tctx.beginPath(); tctx.arc(0,0,6.5*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#8a5a1e'; tctx.beginPath(); tctx.arc(3*s,2*s,2.5*s,0,Math.PI*2); tctx.fill();
                     break;
-                // skeletonkey/plasmabeam/wilkshirianknowledge item icons, and all 21
-                // ach_* achievement badge icons, now live in their own files under
-                // sprites/ (icon-skeletonkey.js, icon-plasmabeam.js,
-                // icon-wilkshirianknowledge.js, icon-ach-common.js + icon-ach_*.js) and
-                // register themselves on window.IconSprites, same as the icons handled by
-                // the window.IconSprites check above.
+                case 'mythic_yeti':
+                    tctx.fillStyle = '#eef7fb'; tctx.beginPath(); tctx.arc(0,1*s,8*s,0,Math.PI*2); tctx.fill();
+                    tctx.strokeStyle = '#4fa3c7'; tctx.lineWidth = 1.5*s;
+                    tctx.beginPath(); tctx.arc(0,1*s,8*s,0,Math.PI*2); tctx.stroke();
+                    tctx.fillStyle = '#4fa3c7'; tctx.beginPath(); tctx.arc(-3*s,-1*s,1.4*s,0,Math.PI*2); tctx.arc(3*s,-1*s,1.4*s,0,Math.PI*2); tctx.fill();
+                    break;
+                case 'mythic_lavaworm':
+                    tctx.fillStyle = '#9c2b0e'; tctx.beginPath(); tctx.arc(-5*s,0,4*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#ff6a2b'; tctx.beginPath(); tctx.arc(2*s,0,6.5*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#ffcf4a'; tctx.beginPath(); tctx.arc(2*s,0,2.5*s,0,Math.PI*2); tctx.fill();
+                    break;
+                case 'mythic_crocodile':
+                    tctx.fillStyle = '#5a7a2e'; tctx.beginPath(); tctx.ellipse(-2*s,0,8*s,5*s,0,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#33471a'; tctx.beginPath(); tctx.ellipse(6*s,0,3.5*s,2.2*s,0,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#dfe6b0'; tctx.beginPath(); tctx.arc(-4*s,-3*s,1.2*s,0,Math.PI*2); tctx.fill();
+                    break;
+                case 'mythic_bear':
+                    tctx.fillStyle = '#7a5233'; tctx.beginPath(); tctx.arc(0,1*s,8*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#7a5233'; tctx.beginPath(); tctx.arc(-6*s,-5*s,2.6*s,0,Math.PI*2); tctx.arc(6*s,-5*s,2.6*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#c98a4b'; tctx.beginPath(); tctx.arc(-6*s,-5*s,1.3*s,0,Math.PI*2); tctx.arc(6*s,-5*s,1.3*s,0,Math.PI*2); tctx.fill();
+                    tctx.fillStyle = '#4a2f1c'; tctx.beginPath(); tctx.arc(0,3*s,3*s,0,Math.PI*2); tctx.fill();
+                    break;
+                // skeletonkey/plasmabeam/wilkshirianknowledge item icons, and all 23
+                // ach_* achievement badge icons (including ach_model_student and
+                // ach_perfectionist), now live in their own files under sprites/
+                // (icon-skeletonkey.js, icon-plasmabeam.js, icon-wilkshirianknowledge.js,
+                // icon-ach-common.js + icon-ach_*.js) and register themselves on
+                // window.IconSprites, same as the icons handled by the window.IconSprites
+                // check above.
             }
             tctx.restore();
         }
@@ -2535,19 +2877,117 @@
 
         function coinValue(type) { return type === 'ruby' ? 5 : type === 'sapphire' ? 10 : type === 'emerald' ? 15 : 1; }
 
-        // Dupe Shop item: Greedy. Adds 100% gold per stack (1 stack = double, 2 stacks = triple,
-        // etc). Applied at every point gold is actually added to totalCoins - goal progress
-        // (goal.collected) is left unscaled since that's tracking level-completion progress,
-        // not currency earned.
+        // Dupe Shop item: Greedy. Diminishing-returns gold multiplier: y = 1 + log base 4 of
+        // (stacks + 1), rather than a flat +100% per stack. The first stack still gives a solid
+        // boost, but each additional stack adds progressively less (log_4(2)=0.5 -> +50% at 1
+        // stack, log_4(3)-log_4(2)=~0.29 -> +29% more at 2 stacks, and so on), instead of scaling
+        // linearly forever. Applied at every point gold is actually added to totalCoins - goal
+        // progress (goal.collected) is left unscaled since that's tracking level-completion
+        // progress, not currency earned. +1 inside the log keeps stacks=0 at multiplier 1 (no
+        // bonus, log_4(1)=0) without needing a log(0) special case.
         function grantGold(amount) {
             let stacks = runItems.greedy || 0;
-            let gained = Math.round(amount * (1 + stacks));
+            let multiplier = 1 + Math.log(stacks + 1) / Math.log(4);
+            let gained = Math.round(amount * multiplier);
             totalCoins += gained;
             return gained;
         }
         function itemRadiusFor(type) { return type === 'coin' ? 12 : (type === 'emerald' ? 11 : 10); }
 
         function spawnLoot(x, y, type, vx, vy) { items.push({ x, y, vx: vx || 0, vy: vy || 0, radius: itemRadiusFor(type), type, collected: false, seed: Math.random()*1000, beingEaten: false }); levelCoinsPossible++; }
+
+        // ==========================================
+        // MYTHIC BOSS ITEM ENGINE
+        // Each mythic item procs on its own recurring timer (like Spikes/Wilkshirian Knowledge)
+        // while at least 1 stack is held. Every proc fires an icicles[] burst - reusing that
+        // array's existing piercing damage-to-every-enemy collision verbatim, just tagged with
+        // a .tint so it doesn't render icy blue (see the icicle draw code) - shaped to echo the
+        // boss's own attack, plus one small utility effect beyond just damage. Ticked from a
+        // per-id counter on `player.mythicTimers` (reset in resetGame's player fields reset).
+        // ==========================================
+        const mythicItemEngine = {
+            mythic_kingslime: {
+                baseInterval: 480, tint: '#3fd67a',
+                proc: (count) => {
+                    let n = 4 + count; let speed = 3;
+                    for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 260, radius: 8, tint: '#3fd67a' }); }
+                    // Utility: yank any loose loot within range straight to the player.
+                    for (let it of items) { if (it.collected || it.beingEaten) continue; let d = dist(player.worldX, player.worldY, it.x, it.y); if (d < 200 && d > 1) { let dx = player.worldX - it.x, dy = player.worldY - it.y; it.vx += (dx/d)*6; it.vy += (dy/d)*6; } }
+                    playSFX('enemy_hit');
+                }
+            },
+            mythic_desertlion: {
+                baseInterval: 440, tint: '#d9a441',
+                proc: (count) => {
+                    let n = 6 + count * 2; let speed = 4.2;
+                    for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 300, radius: 7, tint: '#d9a441' }); }
+                    // Utility: a burst of pounce speed in whatever direction you're moving.
+                    let m = Math.hypot(player.vx, player.vy);
+                    if (m > 0.1) { player.vx += (player.vx/m) * 4; player.vy += (player.vy/m) * 4; }
+                    playSFX('bull_charge');
+                }
+            },
+            mythic_yeti: {
+                baseInterval: 520, tint: '#bfe8f5',
+                proc: (count) => {
+                    let n = 6 + count; let speed = 3;
+                    for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 220, radius: 8, tint: '#bfe8f5' }); }
+                    // Utility: the frost numbs you to harm for a moment after.
+                    player.invulnerableTimer = Math.max(player.invulnerableTimer || 0, 45 + count * 6);
+                    playSFX('ice_nova');
+                }
+            },
+            mythic_lavaworm: {
+                baseInterval: 440, tint: '#ff6a2b',
+                proc: (count) => {
+                    let n = 5 + count * 2; let baseA = Math.random() * Math.PI * 2;
+                    for (let i = 0; i < n; i++) { let a = baseA + (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*3.4, vy: Math.sin(a)*3.4, angle: a, traveled: 0, maxRange: 280, radius: 7, tint: '#ff6a2b' }); }
+                    // Utility: melts a little bonus gold out of the ground each proc.
+                    grantGold(3 + count * 2);
+                    playSFX('fire');
+                }
+            },
+            mythic_crocodile: {
+                baseInterval: 460, tint: '#5a7a2e',
+                proc: (count) => {
+                    let facing = Math.atan2(player.vy, player.vx) || 0;
+                    let n = 5 + count;
+                    for (let i = 0; i < n; i++) { let a = facing - Math.PI/2 + (i/(n-1||1)) * Math.PI; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*4.5, vy: Math.sin(a)*4.5, angle: a, traveled: 0, maxRange: 260, radius: 7, tint: '#5a7a2e' }); }
+                    // Utility: snaps any nearby incoming projectiles out of the air.
+                    for (let p of projectiles) { if (!p.deflected && dist(p.x, p.y, player.worldX, player.worldY) < 130) p.deflected = true; }
+                    playSFX('enemy_hit');
+                }
+            },
+            mythic_bear: {
+                baseInterval: 500, tint: '#7a5233',
+                proc: (count) => {
+                    let n = 7 + count; let speed = 3.2;
+                    for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 240, radius: 8, tint: '#7a5233' }); }
+                    // Utility: shoves every nearby enemy back away from the player.
+                    for (let e of enemies) { let d = dist(player.worldX, player.worldY, e.x, e.y); if (d < 200 && d > 1) { let dx = e.x - player.worldX, dy = e.y - player.worldY; e.x += (dx/d) * 14; e.y += (dy/d) * 14; } }
+                    screenShake = Math.max(screenShake, 8);
+                    playSFX('enemy_hit');
+                }
+            }
+        };
+
+        // Ticks every mythic item currently held, once per frame. Each stack shortens the
+        // interval (diminishing, like Spikes/Wilkshirian Knowledge) rather than firing extra
+        // bursts on the same frame count - keeps a single timer per id instead of one per stack.
+        function updateMythicItems() {
+            for (let id in mythicItemEngine) {
+                let count = runItems[id];
+                if (!count) continue;
+                let eng = mythicItemEngine[id];
+                player.mythicTimers = player.mythicTimers || {};
+                player.mythicTimers[id] = (player.mythicTimers[id] || 0) + 1;
+                let interval = Math.max(120, eng.baseInterval - (count - 1) * 60);
+                if (player.mythicTimers[id] >= interval) {
+                    player.mythicTimers[id] = 0;
+                    eng.proc(count);
+                }
+            }
+        }
 
         // ---- Roguelite run-item system ----
         // Chests and mimics always drop exactly one of these: 70% common (split evenly across
@@ -2714,7 +3154,7 @@
             let container = domRefs.itemsHud;
             if (!container) return;
             container.innerHTML = '';
-            const order = ['magnet', 'wings', 'spikes', 'wilkshirianknowledge', 'greedy', 'slimefriend', 'plasmabeam', 'devildeal', 'shuriken', 'skeletonkey', 'spectre'];
+            const order = ['magnet', 'wings', 'spikes', 'wilkshirianknowledge', 'greedy', 'slimefriend', 'plasmabeam', 'devildeal', 'shuriken', 'skeletonkey', 'spectre', 'mythic_kingslime', 'mythic_desertlion', 'mythic_yeti', 'mythic_lavaworm', 'mythic_crocodile', 'mythic_bear'];
             order.forEach(id => {
                 let count = runItems[id];
                 if (!count) return;
@@ -2928,6 +3368,22 @@
 
         function destroyEnemyByIndex(idx, coinRange) {
             let e = enemies[idx]; if (!e) return;
+            if (e.isBoss) {
+                if ((e.iframe || 0) > 0) return; // long invulnerability window between hits
+                e.hp--; e.iframe = BOSS_IFRAME_FRAMES; e.hitFlash = 24;
+                screenShake = Math.max(screenShake, 10);
+                if (e.hp > 0) { playSFX('enemy_hit'); return; } // survives this hit - not removed yet
+                // Final hit - fall through to the normal removal below with bigger loot.
+                coinRange = [6, 10];
+                if (!bossItemsAwarded[e.bossId]) {
+                    bossItemsAwarded[e.bossId] = true;
+                    grantRoguelikeItem('mythic_' + e.bossId);
+                } else {
+                    // Same boss type killed again this run (themes repeat every 6 levels) -
+                    // no second copy of the mythic item, just extra bonus loot instead.
+                    coinRange = [10, 14];
+                }
+            }
             let range = coinRange || [2,4]; let n = Math.floor(range[0] + Math.random() * (range[1]-range[0]+1));
             if (e.type === 'wanderer' && e.heldCoin) spawnLoot(e.x, e.y, e.heldCoin, (Math.random()-0.5)*18, (Math.random()-0.5)*18);
             for (let i = 0; i < n; i++) spawnLoot(e.x, e.y, rollItemType(level), (Math.random()-0.5)*18, (Math.random()-0.5)*18);
@@ -3164,7 +3620,7 @@
             // Rare Survival level type: rolled fresh each level-up (never on level 1, and never
             // twice in a row). If it hits, hand off to its own dedicated generator entirely -
             // it builds a simpler fixed arena instead of the usual procedural blob-chain map.
-            enemyTelegraphs = [];
+            enemyTelegraphs = []; bossTelegraphs = [];
             // Endless Waves: every level (including level 1) is a Survival arena, no rolling.
             // Classic keeps the original rare-random-Survival-level behavior untouched.
             isSurvivalLevel = (gameMode === 'endless') || (level > 1 && !lastLevelWasSurvival && Math.random() < SURVIVAL_LEVEL_CHANCE);
@@ -3375,8 +3831,26 @@
             let baseSpeed = 1.5 + (scaledLevel * 0.1);
             let shooterCount = 0; let mimicSpawned = false;
             let totalEnemies = Math.floor(scaledLevel * 1.5) + 2;
-            
+
+            // This stage's boss, themed to whichever theme actually ended up active this level
+            // (forced legendary-skin themes included) - see bossDB/bossIdByThemeIndex above.
+            let stageBossId = bossIdByThemeIndex[themes.indexOf(currentTheme)];
+            let stageBossChance = stageBossId ? bossChanceForLevel(level) : 0;
+
             for(let i=0; i < totalEnemies; i++) {
+                if (stageBossChance > 0 && Math.random() < stageBossChance) {
+                    let bDef = bossDB[stageBossId];
+                    let bPos = getValidSpawn(350, bDef.radius);
+                    let boss = {
+                        x: bPos.x, y: bPos.y, radius: bDef.radius, speed: (baseSpeed + 0.3) * bDef.speedMult,
+                        type: 'boss', bossId: stageBossId, isBoss: true, angle: Math.random() * Math.PI * 2,
+                        hp: BOSS_HITS_REQUIRED, maxHp: BOSS_HITS_REQUIRED, iframe: 0, hitFlash: 0,
+                        state: 'cooldown', stateTimer: 0, attackIndex: 0, animTimer: Math.random() * 1000,
+                        cooldownFrames: 90 + Math.floor(Math.random() * 60)
+                    };
+                    enemies.push(boss); levelEnemiesSpawned++;
+                    continue;
+                }
                 let availableEnemies = ['wanderer'];
                 if (level >= 2) availableEnemies.push('dasher');
                 if (level >= 3 && hives.length > 0) availableEnemies.push('chaser');
@@ -3459,7 +3933,7 @@
             survivalElapsed = 0; survivalWaveNum = 0; survivalNextWaveAt = 2.5;
             survivalPowerupSpawned = false; survivalPowerupAt = 3 + Math.random() * 22; // sometime in the first ~25s
             survivalGoalAnnounced = false;
-            enemyTelegraphs = [];
+            enemyTelegraphs = []; bossTelegraphs = [];
 
             MAX_TIME = SURVIVAL_DURATION; timeLeft = MAX_TIME;
             goal.required = SURVIVAL_DURATION; goal.collected = 0; goal.active = true;
@@ -5640,6 +6114,9 @@
                         }
                     }
 
+                    // --- Mythic boss items: recurring attack-mimic procs (see updateMythicItems) ---
+                    updateMythicItems();
+
                     // --- Roguelite: Shuriken item - orbiting blades that deflect bullets and kill enemies ---
                     let shurikenStacks = runItems.shuriken || 0;
                     if (shurikenStacks > 0) {
@@ -5920,6 +6397,53 @@
                             if (!e.heldCoin) {
                                 for(let c of items) { if (!c.collected && !c.beingEaten && dist(e.x, e.y, c.x, c.y) < e.radius + c.radius) { c.beingEaten = true; e.heldCoin = c.type; c.collected = true; break; } }
                             }
+                        } else if (e.type === 'boss') {
+                            // Iframe / hit-flash decay - runs every tick regardless of state.
+                            if (e.iframe > 0) e.iframe--;
+                            if (e.hitFlash > 0) e.hitFlash--;
+                            e.animTimer = (e.animTimer || 0) + 1;
+
+                            let bDef = bossDB[e.bossId];
+                            let attacks = bDef.attacks;
+
+                            if (e.state === 'cooldown') {
+                                // Keep a mid-range distance from the player, like the shooter,
+                                // so the fight has room to read telegraphs and dodge.
+                                let targetAngle = Math.atan2(player.worldY - e.y, player.worldX - e.x);
+                                if (dToPlayer < 260) { e.x -= Math.cos(targetAngle)*e.speed*0.6; e.y -= Math.sin(targetAngle)*e.speed*0.6; }
+                                else if (dToPlayer > 420) { e.x += Math.cos(targetAngle)*e.speed*0.6; e.y += Math.sin(targetAngle)*e.speed*0.6; }
+                                else { e.angle = targetAngle + Math.PI/2; e.x += Math.cos(e.angle)*e.speed*0.3; e.y += Math.sin(e.angle)*e.speed*0.3; }
+                                if (!isSafe(e.x, e.y)) { e.x -= Math.cos(targetAngle)*e.speed; e.y -= Math.sin(targetAngle)*e.speed; }
+
+                                e.stateTimer++;
+                                if (e.stateTimer >= (e.cooldownFrames || 120)) {
+                                    e.currentAttack = attacks[e.attackIndex % attacks.length];
+                                    e.attackIndex++;
+                                    e.state = 'telegraph'; e.stateTimer = 0;
+                                }
+                            } else if (e.state === 'telegraph') {
+                                // Hold roughly in place, facing the player, while the tell plays.
+                                e.angle = Math.atan2(player.worldY - e.y, player.worldX - e.x);
+                                e.stateTimer++;
+                                if (e.stateTimer >= e.currentAttack.telegraph) {
+                                    e.currentAttack.exec(e);
+                                    e.state = 'attack'; e.stateTimer = 0;
+                                }
+                            } else if (e.state === 'attack') {
+                                if (e.currentAttack.tick) e.currentAttack.tick(e);
+                                e.stateTimer++;
+                                if (e.stateTimer >= e.currentAttack.duration) {
+                                    e.state = 'cooldown'; e.stateTimer = 0;
+                                    e.cooldownFrames = e.currentAttack.cooldown || 150;
+                                    e.burrowed = false;
+                                }
+                            }
+                            // Bosses never fall into hazard holes/off the map from their own
+                            // movement (unlike the fragile wanderer/dasher) - just steer back.
+                            if (!isSafe(e.x, e.y)) {
+                                let backAngle = Math.atan2(0 - e.y, 0 - e.x);
+                                e.x += Math.cos(backAngle) * e.speed; e.y += Math.sin(backAngle) * e.speed;
+                            }
                         } else {
                             e.x += Math.cos(e.angle)*e.speed; e.y += Math.sin(e.angle)*e.speed;
                             if (Math.random() < 0.03 + (Math.min(20,level)*0.005)) e.angle += (Math.random() - 0.5);
@@ -5959,9 +6483,26 @@
                                     spawnSplash(e.x, e.y);
                                     destroyEnemyByIndex(i, [2,4]);
                                 } else if (!slimesFriendly && player.activePowerup !== 'rampage' && !isPlayerInvulnerable()) {
-            triggerGameOver(e.type);
+            triggerGameOver(e.type === 'boss' ? ('boss_' + e.bossId) : e.type);
                                 }
                             }
+                        }
+                    }
+
+                    // Boss AOE telegraphs (Bounce Slam, Ice Slam, Ground Pound, etc.): count
+                    // down, then resolve into a single hit-check against the player - same
+                    // "instant death unless rampage/invulnerable" convention as every other
+                    // enemy/projectile contact in the game.
+                    for (let i = bossTelegraphs.length - 1; i >= 0; i--) {
+                        let tg = bossTelegraphs[i];
+                        tg.timer--;
+                        if (tg.timer <= 0) {
+                            if (dist(player.worldX, player.worldY, tg.x, tg.y) < player.radius + tg.radius) {
+                                if (player.activePowerup === 'rampage') { /* rampage tanks the slam */ }
+                                else if (isPlayerInvulnerable()) { /* i-frames tank it too */ }
+                                else triggerGameOver('boss_' + tg.bossId);
+                            }
+                            bossTelegraphs.splice(i, 1);
                         }
                     }
 
@@ -6036,7 +6577,7 @@
                             player.worldX += Math.cos(angle) * overlap; player.worldY += Math.sin(angle) * overlap; player.vx *= 0.6; player.vy *= 0.6;
                         }
                     }
-                    if (goal.active && goal.collected >= goal.required && dist(player.worldX, player.worldY, goal.x, goal.y) < player.radius + goal.radius - 10) {
+                    if (goal.active && goal.collected >= goal.required && !enemies.some(en => en.isBoss) && dist(player.worldX, player.worldY, goal.x, goal.y) < player.radius + goal.radius - 10) {
                         gameState = 'level_end';
                         recordLevelReached();
                         // Survive stages' reward now comes from the two chests spawned flanking
@@ -6103,7 +6644,7 @@
                             screenShake = Math.max(screenShake, 5);
                         } else if (isPlayerInvulnerable()) {
                             spawnSplash(p.x, p.y); projectiles.splice(i, 1); continue;
-                        } else triggerGameOver('shooter');
+                        } else triggerGameOver(p.bossId ? ('boss_' + p.bossId) : 'shooter');
                     }
                     if (p.deflected) {
                         for (let j = enemies.length - 1; j >= 0; j--) {
@@ -7614,7 +8155,28 @@
                 ctx.restore();
             }
 
-            rqCount = 0;
+            // Boss attack telegraphs: same flat ground-decal treatment, but they grow to full
+            // size over their countdown (rather than pulsing at a fixed size) so their radius
+            // reads as "this is exactly the area that will hurt you".
+            if (bossTelegraphs.length) {
+                ctx.save();
+                let blinkT2 = Date.now();
+                let isOnebit2 = player.color === 'onebit';
+                for (let i = 0; i < bossTelegraphs.length; i++) {
+                    let tg = bossTelegraphs[i];
+                    let tx = tg.x + tiltX, ty = tg.y + tiltY;
+                    if (!isOnScreen(tx, ty, cullBuffer)) continue;
+                    let progress = 1 - Math.max(0, tg.timer) / tg.duration;
+                    let blinkPhase = 0.5 + 0.5 * Math.sin(blinkT2 / 70);
+                    ctx.globalAlpha = 0.25 + 0.35 * blinkPhase;
+                    ctx.fillStyle = isOnebit2 ? '#ffffff' : '#ff1e3c';
+                    ctx.beginPath(); ctx.arc(tx, ty, tg.radius * (0.15 + progress * 0.85), 0, Math.PI * 2); ctx.fill();
+                    ctx.globalAlpha = 0.9;
+                    ctx.lineWidth = 4; ctx.strokeStyle = isOnebit2 ? '#000000' : '#ff0000';
+                    ctx.beginPath(); ctx.arc(tx, ty, tg.radius, 0, Math.PI * 2); ctx.stroke();
+                }
+                ctx.restore();
+            }
             // PERF: was a full trees.length scan checking isOnScreen on every tree every frame
             // (100-300+ trees). Reuses the same treeGrid built for physics collision to narrow
             // to nearby buckets first - identical visual result (isOnScreen still does the
@@ -8115,13 +8677,24 @@
                     // being recreated from scratch per-icicle per-frame (a burst item like
                     // Spikes can have 10+ alive at once); building it once and reusing the same
                     // CanvasGradient object is free and visually identical.
-                    if (!icicleGradientCache) {
-                        icicleGradientCache = ctx.createLinearGradient(-14, 0, 10, 0);
-                        icicleGradientCache.addColorStop(0, 'rgba(127,219,255,0)'); icicleGradientCache.addColorStop(1, '#e8fbff');
+                    let icGrad;
+                    if (ic.tint) {
+                        if (!mythicIcicleGradientCache[ic.tint]) {
+                            let g = ctx.createLinearGradient(-14, 0, 10, 0);
+                            g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, ic.tint);
+                            mythicIcicleGradientCache[ic.tint] = g;
+                        }
+                        icGrad = mythicIcicleGradientCache[ic.tint];
+                    } else {
+                        if (!icicleGradientCache) {
+                            icicleGradientCache = ctx.createLinearGradient(-14, 0, 10, 0);
+                            icicleGradientCache.addColorStop(0, 'rgba(127,219,255,0)'); icicleGradientCache.addColorStop(1, '#e8fbff');
+                        }
+                        icGrad = icicleGradientCache;
                     }
-                    ctx.fillStyle = icicleGradientCache;
+                    ctx.fillStyle = icGrad;
                     ctx.beginPath(); ctx.moveTo(-14, -3); ctx.lineTo(8, -1.5); ctx.lineTo(12, 0); ctx.lineTo(8, 1.5); ctx.lineTo(-14, 3); ctx.closePath(); ctx.fill();
-                    ctx.strokeStyle = '#0a2e44'; ctx.lineWidth = 0.6; ctx.stroke(); ctx.restore();
+                    ctx.strokeStyle = ic.tint ? 'rgba(0,0,0,0.55)' : '#0a2e44'; ctx.lineWidth = 0.6; ctx.stroke(); ctx.restore();
                     }
                 }
                 else if (item.type === 'flame') {
@@ -8390,13 +8963,13 @@
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.spikesTimer = 0;
             projectiles = []; icicles = []; flameParticles = [];
             splashes = []; leaves = []; screenShake = 0; hives = [];
-            runItems = {}; companions = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
-            player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0; player.spectreBoostTimer = 0;
+            runItems = {}; bossItemsAwarded = {}; companions = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
+            player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0; player.spectreBoostTimer = 0; player.mythicTimers = {};
             devilDealUsed = 0;
             iceFrostedTiles.clear();
             lavaScorchedTiles.clear(); fairyBloomTiles.clear(); goldenTiles.clear(); goldenHazardTiles.clear(); acidTrail = [];
             shootingStars = []; shootingStarTimer = 0;
-            isSurvivalLevel = false; lastLevelWasSurvival = false; enemyTelegraphs = [];
+            isSurvivalLevel = false; lastLevelWasSurvival = false; enemyTelegraphs = []; bossTelegraphs = [];
             goalUnreachable = false; goalSeen = false;
             levelCoinsCollected = 0; levelCoinsPossible = 0;
             levelEnemiesKilled = 0; levelEnemiesSpawned = 0;
