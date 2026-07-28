@@ -702,7 +702,8 @@
             <span style="font-weight:bold;">Controls</span>
             <button id="controls-toggle" class="toggle-btn">Regular</button>
         </div>
-        <button id="leave-game-btn" class="menu-btn" style="display:none; background:#e74c3c; width:100%; margin:15px 0 0 0; min-width:0; box-sizing:border-box;">Leave Game</button>
+        <button id="skip-level-btn" class="menu-btn" style="display:none; background:#8e44ad; width:100%; margin:15px 0 0 0; min-width:0; box-sizing:border-box;">Skip Level (+3 Items) [DEV]</button>
+        <button id="leave-game-btn" class="menu-btn" style="display:none; background:#e74c3c; width:100%; margin:10px 0 0 0; min-width:0; box-sizing:border-box;">Leave Game</button>
     </div>
 
     <div id="level-modal" class="modal">
@@ -5588,6 +5589,9 @@
             gameState = 'paused'; }
             document.getElementById('settings-modal').style.display = 'block'; syncSettingsUI(); initAudio();
             document.getElementById('leave-game-btn').style.display = (previousState === 'playing' || previousState === 'level_end') ? 'block' : 'none';
+            // DEV: skip button only makes sense mid-run (not on the title/game-over screens),
+            // same visibility gate as Leave Game above.
+            document.getElementById('skip-level-btn').style.display = (previousState === 'playing' || previousState === 'level_end') ? 'block' : 'none';
         }
 
         // Records a newly-reached level against whichever mode is currently active, persisting
@@ -5952,6 +5956,16 @@
             document.querySelectorAll('.corner-icon').forEach(el => el.style.display = 'none');
             resetGame();
             gameState = 'title';
+        });
+        // DEV: instantly clears the current level, no run stats/coins/achievements from it are
+        // recorded (matches nothing-happened-here since destroyEnemyByIndex/goal-collect never
+        // ran), and hands out 3 random roguelike items on top - same roll/grant path a normal
+        // level-up chest uses (rollRoguelikeItem + grantRoguelikeItem), so locked-item filtering,
+        // stack-record tracking, and the level-end "Items Won" summary all just work unmodified.
+        document.getElementById('skip-level-btn').addEventListener('click', () => {
+            document.getElementById('settings-modal').style.display = 'none';
+            for (let i = 0; i < 3; i++) grantRoguelikeItem(rollRoguelikeItem());
+            nextLevel();
         });
         document.getElementById('promo-redeem-btn').addEventListener('click', redeemPromoCode);
         [0, 1, 2, 3].forEach(i => {
