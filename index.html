@@ -8188,6 +8188,8 @@
                 }
                 ctx.restore();
             }
+
+            rqCount = 0;
             // PERF: was a full trees.length scan checking isOnScreen on every tree every frame
             // (100-300+ trees). Reuses the same treeGrid built for physics collision to narrow
             // to nearby buckets first - identical visual result (isOnScreen still does the
