@@ -43,6 +43,13 @@
         #timer-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: calc(100% - 180px); max-width: 300px; height: 25px; background: rgba(0,0,0,0.5); border-radius: 15px; border: 3px solid #fff; pointer-events: none; overflow: hidden; }
         #timer-fill { height: 100%; background: linear-gradient(90deg, #ff477e, #ffcf33); width: 100%; transform-origin: left; transition: background 0.3s; }
         #timer-container.danger #timer-fill { background: #ff0000; animation: pulse 0.5s infinite; }
+        /* Level 50+ boss-gauntlet stages: no countdown, so the bar itself instead reports
+           whether every boss on the map is still alive - full red with a lock icon while any
+           remain, swapping to a clear/ready color with the lock gone once they're all down. */
+        #timer-container.gauntlet-locked #timer-fill { background: #d0021b; animation: none; }
+        #timer-container.gauntlet-unlocked #timer-fill { background: linear-gradient(90deg, #33e07a, #ffcf33); animation: none; }
+        #timer-lock-icon { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; align-items: center; justify-content: center; font-size: 15px; text-shadow: 0 1px 2px rgba(0,0,0,0.7); pointer-events: none; }
+        #timer-container.gauntlet-locked #timer-lock-icon { display: flex; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
         #hazard-warning { position: absolute; top: 15%; left: 50%; transform: translate(-50%, -50%); display: none; background: rgba(0, 0, 0, 0.7); color: #ff477e; padding: 10px 20px; border-radius: 30px; border: 2px solid #ff477e; font-size: 1.5rem; font-weight: bold; text-shadow: 0 0 5px #000; z-index: 10; pointer-events: none; animation: pulse 0.5s infinite; }
@@ -561,7 +568,7 @@
     <div id="ui-layer">
         <div id="hazard-vignette"></div>
         <div id="devildeal-flash"></div>
-        <div id="timer-container"><div id="timer-fill"></div></div>
+        <div id="timer-container"><div id="timer-fill"></div><div id="timer-lock-icon">🔒</div></div>
         <div id="hazard-warning">HAZARD</div>
         <div id="survive-announcement">Survive!</div>
         <div id="time-countdown"></div>
@@ -1337,6 +1344,15 @@
         const SURVIVAL_LEVEL_CHANCE = 0.12; // rolled once per level-up, skipped on level 1
         const SURVIVAL_DURATION = 30;
         let isSurvivalLevel = false;
+        // Level 50+ ("every enemy slot is a boss" - see bossChanceForLevel/forceAllSlotsBoss):
+        // these stages drop the usual countdown timer entirely and gate completion purely on
+        // clearing every boss on the map instead of also requiring a coin quota. Set once per
+        // generateLevel() call (see there) alongside isSurvivalLevel.
+        let isBossGauntletLevel = false;
+        // True once every boss on a boss-gauntlet stage has been cleared - at that instant the
+        // timer bar stops showing the locked/red state and starts a fresh countdown (see the
+        // isBossGauntletLevel tick in update() and updateHUD()).
+        let bossGauntletUnlocked = false;
         let lastLevelWasSurvival = false; // avoids two survival levels back-to-back
         let survivalElapsed = 0;
         let survivalWaveNum = 0;
@@ -3658,13 +3674,19 @@
             // Endless Waves: every level (including level 1) is a Survival arena, no rolling.
             // Classic keeps the original rare-random-Survival-level behavior untouched.
             isSurvivalLevel = (gameMode === 'endless') || (level > 1 && !lastLevelWasSurvival && Math.random() < SURVIVAL_LEVEL_CHANCE);
+            isBossGauntletLevel = !isSurvivalLevel && level >= 50;
+            bossGauntletUnlocked = false;
             if (isSurvivalLevel) { generateSurvivalLevel(); return; }
             lastLevelWasSurvival = false;
 
             let scaledLevel = Math.min(20, level);
+            // Level 50+: no countdown timer (see the timeLeft tick in update() and the hidden
+            // timer bar in updateHUD()) and the goal is unlocked purely by clearing every boss
+            // on the map (see the isLocked/win checks below) rather than also needing a coin
+            // quota - fitting since every enemy slot on these stages spawns as a boss.
             MAX_TIME = Math.max(20, 45 - (scaledLevel - 1) * (25 / 19));
             timeLeft = MAX_TIME;
-            goal.required = Math.round(Math.min(50, 5 + (scaledLevel - 1) * 2.3)); goal.collected = 0;
+            goal.required = isBossGauntletLevel ? 0 : Math.round(Math.min(50, 5 + (scaledLevel - 1) * 2.3)); goal.collected = 0;
             
             currentTheme = themes[(level - 1) % themes.length];
             // Magma, Glacier, and Toxic Sludge each force the whole level to render with one
@@ -5873,8 +5895,13 @@
         function updateHUD() {
             domRefs.levelDisplay.innerText = level;
             domRefs.coinDisplay.innerText = totalCoins;
-            domRefs.timerFill.style.width = Math.max(0, (timeLeft / MAX_TIME) * 100) + "%";
-            if (timeLeft <= 3) domRefs.timerContainer.classList.add('danger'); else domRefs.timerContainer.classList.remove('danger');
+            if (isBossGauntletLevel && !bossGauntletUnlocked) {
+                updateGauntletTimerBar();
+            } else {
+                domRefs.timerContainer.classList.remove('gauntlet-locked', 'gauntlet-unlocked');
+                domRefs.timerFill.style.width = Math.max(0, (timeLeft / MAX_TIME) * 100) + "%";
+                if (timeLeft <= 3) domRefs.timerContainer.classList.add('danger'); else domRefs.timerContainer.classList.remove('danger');
+            }
             if (player.activePowerup) {
                 let pu = powerupTypesById.get(player.activePowerup);
                 domRefs.powerupIndicator.style.display = 'flex';
@@ -5882,6 +5909,23 @@
                 domRefs.puFill.style.width = Math.max(0, (player.powerupTimeLeft / player.powerupDuration) * 100) + '%';
                 domRefs.puFill.style.background = pu.color;
             } else { domRefs.powerupIndicator.style.display = 'none'; }
+        }
+
+        // Level 50+ boss-gauntlet stages have no countdown (see isBossGauntletLevel) - instead
+        // the timer bar itself reports boss status: full and red with a lock icon while any
+        // boss is still alive on the map, switching to a clear "ready" color with the lock gone
+        // once every one of them is defeated. gauntletBarLockedState caches the last written
+        // state so this can be called every frame without forcing a style recalc when nothing
+        // has actually changed (same spirit as updateTimerBarOnly below).
+        let gauntletBarLockedState = null;
+        function updateGauntletTimerBar() {
+            domRefs.timerContainer.classList.remove('danger');
+            domRefs.timerFill.style.width = '100%';
+            let locked = enemies.some(en => en.isBoss);
+            if (locked === gauntletBarLockedState) return;
+            gauntletBarLockedState = locked;
+            domRefs.timerContainer.classList.toggle('gauntlet-locked', locked);
+            domRefs.timerContainer.classList.toggle('gauntlet-unlocked', !locked);
         }
 
         // Cheap per-tick update used while a powerup is running: only touches the one element
@@ -6456,11 +6500,24 @@
                         if (player.hazardTimer >= hazardLimit) triggerGameOver('hazard');
                     } else { player.hazardTimer = 0; warnUI.style.display = 'none'; updateHazardVignette(0); }
 
-                    timeLeft -= 1/60;
-                    if (isSurvivalLevel) { if (timeLeft < 0) timeLeft = 0; }
-                    else if (timeLeft <= 0) triggerGameOver('time');
-                    if (Math.floor(timeLeft*60)%10 === 0) updateTimerBarOnly();
-                    updateTimeDangerEffects();
+                    if (!isBossGauntletLevel || bossGauntletUnlocked) {
+                        timeLeft -= 1/60;
+                        if (isSurvivalLevel) { if (timeLeft < 0) timeLeft = 0; }
+                        else if (timeLeft <= 0) triggerGameOver('time');
+                        if (Math.floor(timeLeft*60)%10 === 0) updateTimerBarOnly();
+                        updateTimeDangerEffects();
+                    } else if (!enemies.some(en => en.isBoss)) {
+                        // Last boss just fell - start the countdown fresh from full, and swap
+                        // the bar's visuals back from the locked/red state to the normal timer
+                        // look (handled by the branch above from here on).
+                        bossGauntletUnlocked = true;
+                        timeLeft = MAX_TIME;
+                        domRefs.timerContainer.classList.remove('gauntlet-locked', 'gauntlet-unlocked');
+                        gauntletBarLockedState = null;
+                        updateTimerBarOnly();
+                    } else {
+                        updateGauntletTimerBar();
+                    }
                     if (isSurvivalLevel) updateSurvivalMode();
 
                     
@@ -8521,7 +8578,13 @@
             if (goal.active && !goalSeen && isOnScreen(goal.x + tiltX, goal.y + tiltY, cullBuffer)) goalSeen = true;
 
             if (goal.active) {
-                let isLocked = goal.collected < goal.required; let pulse = isLocked ? 0 : Math.sin(Date.now() / 150) * 8;
+                let bossesRemaining = enemies.reduce((n, en) => n + (en.isBoss ? 1 : 0), 0);
+                let coinsLocked = goal.collected < goal.required;
+                let isLocked = coinsLocked || bossesRemaining > 0; let pulse = isLocked ? 0 : Math.sin(Date.now() / 150) * 8;
+                // Once the coin quota is met (or there wasn't one, e.g. boss-gauntlet stages),
+                // a still-locked goal is being held by bosses alone - show how many are left
+                // instead of a stale/misleading "0/0"-style coin readout.
+                let lockLabel = coinsLocked ? `${goal.collected}/${goal.required}` : `${bossesRemaining} left`;
                 ctx.save(); ctx.translate(goal.x, goal.y);
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'; ctx.beginPath(); ctx.ellipse(0, 15, goal.radius, goal.radius * 0.5, 0, 0, Math.PI*2); ctx.fill();
                 if (player.color === 'glitch') {
@@ -8533,7 +8596,7 @@
                     ctx.save(); ctx.beginPath(); ctx.arc(0, 0, goal.radius * 0.78, 0, Math.PI*2); ctx.clip();
                     ctx.fillStyle = isLocked ? '#222' : '#0078d7'; ctx.fillRect(-goal.radius, -goal.radius, goal.radius*2, goal.radius*2);
                     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    if (isLocked) { ctx.font = 'bold 12px monospace'; ctx.fillText(`${goal.collected}/${goal.required}`, 0, 0); }
+                    if (isLocked) { ctx.font = 'bold 12px monospace'; ctx.fillText(`${lockLabel}`, 0, 0); }
                     else {
                         ctx.font = 'bold 22px sans-serif'; ctx.fillText(':(', 0, -goal.radius*0.28);
                         ctx.font = '7px monospace';
@@ -8553,7 +8616,7 @@
                     ctx.beginPath(); ctx.arc(0, 0, goal.radius * 0.7, 0, Math.PI*2); ctx.fillStyle = paper; ctx.fill();
                     ctx.lineWidth = 2; ctx.strokeStyle = ink; ctx.stroke();
                     ctx.fillStyle = ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    if (isLocked) { ctx.font = 'bold 14px monospace'; ctx.fillText(`${goal.collected}/${goal.required}`, 0, 0); }
+                    if (isLocked) { ctx.font = 'bold 14px monospace'; ctx.fillText(`${lockLabel}`, 0, 0); }
                     else { ctx.font = 'bold 20px monospace'; ctx.fillText('GOAL', 0, 0); }
                 } else {
                     ctx.beginPath(); ctx.arc(0, 0, goal.radius + pulse + 10, 0, Math.PI*2); ctx.fillStyle = isLocked ? 'rgba(136, 136, 136, 0.2)' : 'rgba(255, 207, 51, 0.3)'; ctx.fill();
@@ -8561,7 +8624,7 @@
                     ctx.lineWidth = 4; ctx.strokeStyle = isLocked ? '#888' : '#fff'; ctx.stroke();
                     ctx.beginPath(); ctx.arc(0, 0, goal.radius * 0.7, 0, Math.PI*2); ctx.fillStyle = isLocked ? '#444' : '#f1c40f'; ctx.fill();
                     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                    if (isLocked) { drawPixelIcon('lock', ctx, 0, -8, 26); ctx.font = 'bold 14px sans-serif'; ctx.fillText(`${goal.collected}/${goal.required}`, 0, 15); } 
+                    if (isLocked) { drawPixelIcon('lock', ctx, 0, -8, 26); ctx.font = 'bold 14px sans-serif'; ctx.fillText(`${lockLabel}`, 0, 15); } 
                     else { ctx.font = 'bold 20px sans-serif'; ctx.fillText('GOAL', 0, 0); }
                 }
                 ctx.restore();
@@ -9227,9 +9290,10 @@
                 drawCharacterModel(pScreenX, pScreenY, player.vx, player.vy, player.radius, player.color, Math.abs(player.jiggleForceX) + Math.abs(player.jiggleForceY) > 0, player.hat);
             }
 
-            if (gameState === 'playing' && goal.active && timeLeft <= MAX_TIME / 2) {
+            if (gameState === 'playing' && goal.active && (isBossGauntletLevel || timeLeft <= MAX_TIME / 2)) {
                 const screenBuffer = 50;
                 if (goal.x < camera.x - screenBuffer || goal.x > camera.x + canvas.width + screenBuffer || goal.y < camera.y - screenBuffer || goal.y > camera.y + canvas.height + screenBuffer) {
+                    let goalLocked = goal.collected < goal.required || enemies.some(en => en.isBoss);
                     let angle = Math.atan2(goal.y - player.worldY, goal.x - player.worldX);
                     let radius = Math.min(canvas.width / 2, canvas.height / 2) - 40;
                     ctx.save();
@@ -9237,7 +9301,7 @@
                     if (player.color === 'glitch') {
                         // Glitch: the off-screen goal pointer renders as a classic OS mouse
                         // cursor, tip aimed toward the goal, instead of the usual arrowhead.
-                        ctx.fillStyle = goal.collected < goal.required ? '#999999' : '#fff'; ctx.strokeStyle = '#000';
+                        ctx.fillStyle = goalLocked ? '#999999' : '#fff'; ctx.strokeStyle = '#000';
                         ctx.lineWidth = 2; ctx.lineJoin = 'round';
                         ctx.beginPath();
                         ctx.moveTo(19, 0); ctx.lineTo(-9, -9); ctx.lineTo(-4, -3); ctx.lineTo(-15, -3);
@@ -9248,10 +9312,33 @@
                         ctx.lineWidth = 3;
                         ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-5, 0); ctx.lineTo(-15, -15); ctx.closePath(); ctx.fill(); ctx.stroke();
                     } else {
-                        ctx.fillStyle = goal.collected < goal.required ? '#999999' : '#ffcf33'; ctx.strokeStyle = goal.collected < goal.required ? '#666666' : '#d4a017';
+                        ctx.fillStyle = goalLocked ? '#999999' : '#ffcf33'; ctx.strokeStyle = goalLocked ? '#666666' : '#d4a017';
                         ctx.lineWidth = 3;
                         ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-15, 15); ctx.lineTo(-5, 0); ctx.lineTo(-15, -15); ctx.closePath(); ctx.fill(); ctx.stroke();
                     }
+                    ctx.restore();
+                }
+            }
+
+            // Boss off-screen pointers: a smaller red arrow per living boss currently off
+            // camera, so the player can always tell where an active threat is even while it's
+            // out of view - unlike the single yellow goal arrow above, these aren't gated on
+            // time remaining at all, since a boss can be spawned (and needs hunting down) on
+            // any level with one, timer or not. Multiple bosses (boss-gauntlet stages) each get
+            // their own arrow.
+            if (gameState === 'playing') {
+                const screenBuffer = 50;
+                for (let bi = 0; bi < enemies.length; bi++) {
+                    let be = enemies[bi];
+                    if (!be.isBoss) continue;
+                    if (be.x >= camera.x - screenBuffer && be.x <= camera.x + canvas.width + screenBuffer && be.y >= camera.y - screenBuffer && be.y <= camera.y + canvas.height + screenBuffer) continue;
+                    let angle = Math.atan2(be.y - player.worldY, be.x - player.worldX);
+                    let radius = Math.min(canvas.width / 2, canvas.height / 2) - 40;
+                    ctx.save();
+                    ctx.translate(canvas.width / 2 + Math.cos(angle) * radius, canvas.height / 2 + Math.sin(angle) * radius); ctx.rotate(angle);
+                    ctx.fillStyle = '#ff1e3c'; ctx.strokeStyle = '#7a0010';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(-10, 10); ctx.lineTo(-3, 0); ctx.lineTo(-10, -10); ctx.closePath(); ctx.fill(); ctx.stroke();
                     ctx.restore();
                 }
             }
@@ -9318,7 +9405,7 @@
             iceFrostedTiles.clear();
             lavaScorchedTiles.clear(); fairyBloomTiles.clear(); goldenTiles.clear(); goldenHazardTiles.clear(); acidTrail = [];
             shootingStars = []; shootingStarTimer = 0;
-            isSurvivalLevel = false; lastLevelWasSurvival = false; enemyTelegraphs = []; bossTelegraphs = [];
+            isSurvivalLevel = false; isBossGauntletLevel = false; bossGauntletUnlocked = false; lastLevelWasSurvival = false; enemyTelegraphs = []; bossTelegraphs = [];
             goalUnreachable = false; goalSeen = false;
             levelCoinsCollected = 0; levelCoinsPossible = 0;
             levelEnemiesKilled = 0; levelEnemiesSpawned = 0;
