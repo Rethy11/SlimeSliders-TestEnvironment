@@ -2582,15 +2582,29 @@
             let t = h / (SHADOW_LIGHT_HEIGHT - h); // similar-triangles factor from the height ratio
             return { dx: (x - shadowLight.x) * t, dy: (y - shadowLight.y) * t };
         }
-        // Re-centers the overhead light above whatever the current level's land actually spans -
+        // Places the overhead light for whatever the current level's land actually spans -
         // called once right after landHexList is rebuilt, before any tree/rock bakes its shadow
-        // vector off of it.
+        // vector off of it. Previously this parked the light directly above the map's centroid,
+        // which made every shadow radiate outward from dead center (a "lamp hanging over the
+        // middle of the room" look). Real sunlight doesn't sit over the room it's lighting - it
+        // comes from far off to one side, so instead this offsets the light from the centroid,
+        // out past the map's own edge, in a direction randomized once per level. The result is
+        // shadows that mostly point one consistent way across the whole level (like a low sun)
+        // rather than fanning out from the middle.
         function recomputeShadowLight() {
             if (!landHexList.length) { shadowLight.x = 0; shadowLight.y = 0; return; }
             let sx = 0, sy = 0;
             for (let t of landHexList) { sx += t.x; sy += t.y; }
-            shadowLight.x = sx / landHexList.length;
-            shadowLight.y = sy / landHexList.length;
+            let cx = sx / landHexList.length, cy = sy / landHexList.length;
+            // How far the land itself reaches from its centroid, so the light can be placed a
+            // consistent distance clear of the map's actual edge rather than an arbitrary fixed
+            // offset that might sit inside a very large level or absurdly far outside a small one.
+            let maxR = 0;
+            for (let t of landHexList) { let dr = dist(cx, cy, t.x, t.y); if (dr > maxR) maxR = dr; }
+            let angle = Math.random() * Math.PI * 2;
+            let lightDist = maxR * 1.6 + 300;
+            shadowLight.x = cx + Math.cos(angle) * lightDist;
+            shadowLight.y = cy + Math.sin(angle) * lightDist;
         }
         function isOnScreen(x, y, buffer) { 
             buffer = buffer || 50; 
@@ -3742,7 +3756,9 @@
                 for (let dirIdx of tile.fenceCandidateDirs) {
                     let d = HEX_DIRS[dirIdx];
                     let [p1, p2] = hexEdgeCorners(tile, d.q, d.r);
-                    fences.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, midX: (p1.x+p2.x)/2, midY: (p1.y+p2.y)/2 });
+                    let fmidX = (p1.x+p2.x)/2, fmidY = (p1.y+p2.y)/2;
+                    let fsv = computeShadowVector(fmidX, fmidY, 22);
+                    fences.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, midX: fmidX, midY: fmidY, shadowDX: fsv.dx, shadowDY: fsv.dy });
                 }
             }
         }
@@ -4289,7 +4305,9 @@
                 for (let dirIdx of tile.fenceCandidateDirs) {
                     let d = HEX_DIRS[dirIdx];
                     let [p1, p2] = hexEdgeCorners(tile, d.q, d.r);
-                    fences.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, midX: (p1.x+p2.x)/2, midY: (p1.y+p2.y)/2 });
+                    let fmidX = (p1.x+p2.x)/2, fmidY = (p1.y+p2.y)/2;
+                    let fsv = computeShadowVector(fmidX, fmidY, 22);
+                    fences.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, midX: fmidX, midY: fmidY, shadowDX: fsv.dx, shadowDY: fsv.dy });
                 }
             }
         }
@@ -7966,31 +7984,103 @@
             }
         }
 
-        // Directional counterpart to drawGroundShadow, for static scenery (trees/rocks) whose
-        // {dx,dy} shadow vector was already baked once at level-generation time (see
-        // computeShadowVector/makeSceneryObject) rather than computed here. Draws a single
-        // ellipse stretched from the object's own ground-contact point (cx,cy) out to
-        // (cx+dx, cy+dy) - the far end of its shadow - so it reads as one shadow pointing away
-        // from the level's overhead light instead of a plain blob directly underneath. Falls
-        // back to a plain drawGroundShadow blob on the rare tile sitting almost exactly under
-        // the light, where dx/dy are close to zero.
-        function drawCastShadow(c, cx, cy, dx, dy, halfWidth) {
-            let len = Math.hypot(dx, dy);
-            if (len < 2) { drawGroundShadow(c, cx, cy, halfWidth * 2.2, halfWidth); return; }
-            let rx = len * 0.5 + halfWidth * 1.4;
-            c.save();
-            c.translate(cx + dx * 0.5, cy + dy * 0.5);
-            c.rotate(Math.atan2(dy, dx));
+        // Fills a shadow polygon whose points are already in world space (post-projection).
+        // Shared by every silhouette shadow below, same 1-Bit double-tone handling
+        // drawGroundShadow uses (an opaque black fill plus a white ring, since translucent
+        // black barely reads against that mode's own black checker tiles).
+        function fillShadowPolygon(c, pts) {
+            c.beginPath();
+            c.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+            c.closePath();
             if (player.color === 'onebit') {
-                c.fillStyle = '#000000';
-                c.beginPath(); c.ellipse(0, 0, rx, halfWidth, 0, 0, Math.PI * 2); c.fill();
-                c.strokeStyle = '#ffffff'; c.lineWidth = 1.5;
-                c.beginPath(); c.ellipse(0, 0, rx, halfWidth, 0, 0, Math.PI * 2); c.stroke();
+                c.fillStyle = '#000000'; c.fill();
+                c.strokeStyle = '#ffffff'; c.lineWidth = 1.5; c.stroke();
             } else {
-                c.fillStyle = 'rgba(0,0,0,0.22)';
-                c.beginPath(); c.ellipse(0, 0, rx, halfWidth, 0, 0, Math.PI * 2); c.fill();
+                c.fillStyle = 'rgba(0,0,0,0.22)'; c.fill();
             }
-            c.restore();
+        }
+
+        // Builds a small circle-approximating fan of points, used by the round-canopy tree
+        // outlines below.
+        function shadowCirclePoints(cx, cy, rad, n) {
+            let out = [];
+            for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; out.push({ x: cx + Math.cos(a) * rad, y: cy + Math.sin(a) * rad }); }
+            return out;
+        }
+
+        // Directional shadow for static scenery (trees/rocks/fences) whose {dx,dy} shadow
+        // vector was already baked once at level-generation time (see
+        // computeShadowVector/makeSceneryObject). Rather than substituting a generic ellipse
+        // sized off the object's (intentionally smaller, differently-shaped) collision circle,
+        // this projects the object's own outline - passed in as local points relative to its
+        // own ground-contact point, each tagged with how high off the ground it sits - into an
+        // actual cast silhouette: every point keeps its own horizontal spread, but slides along
+        // the baked shadow vector in proportion to its own height (so a treetop point travels
+        // the full baked distance while a trunk-base point barely moves), and is flattened onto
+        // the ground rather than adding extra vertical thickness of its own. A point's height
+        // fraction is derived from its local y (how far above the object's own base it is)
+        // divided by maxUp, the local y of the outline's own highest point - so this works for
+        // any silhouette without needing per-point authoring of height fractions. A small sliver
+        // (20%) of each point's own local y is kept in the flattened result purely so the
+        // silhouette still reads as a shape (rather than collapsing to a thin wedge) when the
+        // shadow vector is very short, i.e. objects sitting almost directly under the light.
+        function projectSilhouetteShadow(c, baseX, baseY, outline, dx, dy) {
+            let maxUp = outline.maxUp || 1;
+            let pts = outline.pts.map(p => {
+                let h = Math.max(0, Math.min(1, -p.y / maxUp));
+                return { x: baseX + p.x + dx * h, y: baseY + p.y * 0.2 + dy * h };
+            });
+            fillShadowPolygon(c, pts);
+        }
+
+        // Local (relative to the tree's own x,y) outline points for each tree look this game
+        // draws, mirroring the actual canopy/trunk shapes in the tree render block below instead
+        // of a stand-in collision circle. maxUp is the local y (negated, since up is negative y)
+        // of the outline's tallest point, used by projectSilhouetteShadow to work out how far
+        // along the shadow vector each point should slide.
+        function getTreeShadowOutline(t) {
+            let r = t.radius;
+            let variant = t.variant || 0;
+            let desertLike = currentTheme.name === 'Desert' || currentTheme.name === 'Volcano';
+            // Trunk base, common to every tree look.
+            let pts = [{ x: -r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: r * 0.8 }, { x: -r * 0.2, y: r * 0.8 }];
+            let maxUp = r * 0.1;
+            if (desertLike) {
+                if (variant === 1) { maxUp = r * 0.95; pts = pts.concat(shadowCirclePoints(0, -r * 0.3, r * 0.65, 6)); }
+                else if (variant === 2) { maxUp = r * 1.5; pts = pts.concat([{ x: -r * 0.3, y: -r }, { x: r * 0.3, y: -r }, { x: r * 0.3, y: r * 0.5 }, { x: -r * 0.3, y: r * 0.5 }]); }
+                else { maxUp = r * 1.5; pts = pts.concat([{ x: -r * 0.4, y: -r }, { x: r * 0.4, y: -r }, { x: r * 0.4, y: r * 0.5 }, { x: -r * 0.4, y: r * 0.5 }]); }
+            } else {
+                if (variant === 1) { maxUp = r * 1.45; pts = pts.concat(shadowCirclePoints(0, -r * 0.55, r * 0.9, 8)); }
+                else if (variant === 2) { maxUp = r * 1.6; pts = pts.concat([{ x: 0, y: -r * 1.6 }, { x: r * 0.6, y: r * 0.4 }, { x: -r * 0.6, y: r * 0.4 }]); }
+                else { maxUp = r * 1.5; pts = pts.concat([{ x: 0, y: -r * 1.5 }, { x: r, y: r * 0.5 }, { x: -r, y: r * 0.5 }]); }
+            }
+            return { pts, maxUp };
+        }
+
+        // Local (relative to the rock's own x,y) outline for rocks - all three variants drawn
+        // below are short, wide, half-dome-like shapes, so one shared footprint (wider and much
+        // flatter than the collision circle) stands in for all of them.
+        function getRockShadowOutline(r) {
+            let rad = r.radius;
+            return {
+                pts: [{ x: -rad, y: rad * 0.05 }, { x: -rad * 0.6, y: -rad * 0.55 }, { x: 0, y: -rad * 0.75 }, { x: rad * 0.6, y: -rad * 0.55 }, { x: rad, y: rad * 0.05 }, { x: rad * 0.85, y: rad * 0.18 }, { x: -rad * 0.85, y: rad * 0.18 }],
+                maxUp: rad * 0.75
+            };
+        }
+
+        // Fence shadow: a straight low wall, so its silhouette is just its own two ground
+        // endpoints plus those same two points raised to the fence's baked height - no need for
+        // a generic outline/height-fraction split since the whole rail sits at one height.
+        // f.shadowDX/DY is the baked vector for a point at that full rail height (see
+        // buildFences()/buildSurvivalFences()), so the raised points just add it directly.
+        function drawFenceShadow(c, f) {
+            let dx = f.shadowDX || 0, dy = f.shadowDY || 0;
+            let pts = [
+                { x: f.x1, y: f.y1 }, { x: f.x2, y: f.y2 },
+                { x: f.x2 + dx, y: f.y2 + dy }, { x: f.x1 + dx, y: f.y1 + dy }
+            ];
+            fillShadowPolygon(c, pts);
         }
 
 
@@ -8948,7 +9038,7 @@
                     let treeBaseColor = t.golden ? '#8a5a00' : t.onFire ? '#2b1a12' : t.wilted ? '#4a3a2a' : t.frozen ? '#4a6f8a' : currentTheme.treeBase;
                     let treeTopColor = t.golden ? goldGrad : t.onFire ? '#3d1f0a' : t.wilted ? '#5c6b3f' : t.frozen ? '#bfe9f7' : currentTheme.treeTop;
                     let treeAccentColor = t.golden ? '#fff7c2' : t.onFire ? '#ff6b1a' : t.wilted ? '#8a9a5f' : t.frozen ? '#e8f7fc' : (currentTheme.name === "Snow" ? "#fff" : "#388e3c");
-                    drawCastShadow(ctx, t.x, t.y + t.radius * 0.5, t.shadowDX || 0, t.shadowDY || 0, t.radius * 0.38);
+                    projectSilhouetteShadow(ctx, t.x, t.y, getTreeShadowOutline(t), t.shadowDX || 0, t.shadowDY || 0);
                     ctx.fillStyle = treeBaseColor; ctx.fillRect(t.x - t.radius*0.2, t.y - t.radius*0.1, t.radius*0.4, t.radius*0.9);
                     ctx.save(); ctx.translate(t.x, t.y - t.radius*0.1); ctx.rotate(sway); ctx.translate(-t.x, -(t.y - t.radius*0.1));
                     ctx.fillStyle = treeTopColor;
@@ -9044,7 +9134,7 @@
                     // usual theme art, all the time (see drawRainbowRock).
                     if (player.color === 'rainbow') { window.LegendaryStageEffects.rainbow.drawRainbowRock(ctx, r.x, r.y, r.radius, r.seed || 0); return; }
                     let variant = r.variant || 0;
-                    drawCastShadow(ctx, r.x, r.y + r.radius * 0.18, r.shadowDX || 0, r.shadowDY || 0, r.radius * 0.4);
+                    projectSilhouetteShadow(ctx, r.x, r.y, getRockShadowOutline(r), r.shadowDX || 0, r.shadowDY || 0);
                     if (r.golden) {
                         let rockGoldGrad = ctx.createLinearGradient(r.x - r.radius, r.y - r.radius, r.x + r.radius, r.y + r.radius);
                         rockGoldGrad.addColorStop(0, '#fff7c2'); rockGoldGrad.addColorStop(0.5, '#ffcc00'); rockGoldGrad.addColorStop(1, '#8a5a00');
@@ -9098,8 +9188,12 @@
                     // gilded - same post-and-rail shape, just swapped to gold posts/rails with
                     // a bright highlighted edge instead of the usual weathered wood.
                     let isGold = f.golden;
+                    // Directional shadow, cast toward the level's shadow light like tree/rock
+                    // shadows - drawn in world space (before the translate/rotate below, which
+                    // is local to the rail's own orientation) since the shadow polygon's own
+                    // points are already world coordinates.
+                    drawFenceShadow(ctx, f);
                     ctx.save(); ctx.translate(f.midX, f.midY); ctx.rotate(angle);
-                    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(-len/2, 5, len, 4);
                     ctx.fillStyle = isGold ? '#a9720c' : '#8a5a2b';
                     ctx.fillRect(-len/2 - 2, -14, 5, 20);
                     ctx.fillRect(len/2 - 3, -14, 5, 20);
