@@ -56,7 +56,9 @@
         /* Sandstorm Mane (Lion mythic item) one-time dash tutorial popups - "Double tap to
            dash!" the first time the ring ever fills, and "Swipe to change dash direction!"
            the first time the aim window ever reaches its halfway point. Both pause game logic
-           (see lionTutorialPause) and are dismissed by double-tapping. */
+           (see lionTutorialPause). "Double tap to dash!" is dismissed by double-tapping;
+           "Swipe to change dash direction!" is dismissed by swiping instead, to match the
+           gesture it's teaching. */
         #lion-tutorial-popup { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%) scale(0.6); display: none; opacity: 0; background: rgba(0,0,0,0.82); color: #ff3b52; padding: 18px 32px; border-radius: 16px; border: 3px solid #ff3b52; font-size: 1.3rem; font-weight: bold; text-shadow: 0 0 8px #000; z-index: 60; pointer-events: none; text-align: center; transition: opacity 0.3s ease, transform 0.3s ease; }
         #lion-tutorial-popup.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         #lion-tutorial-popup .lion-tutorial-sub { display: block; font-size: 0.8rem; font-weight: normal; margin-top: 6px; opacity: 0.85; }
@@ -581,7 +583,7 @@
     <button id="settings-corner-btn" class="corner-icon"><img class="icon-img" id="settings-icon-img" style="width:1.6rem;height:1.6rem;" alt=""></button>
     <button id="almanac-corner-btn" class="corner-icon"><img class="icon-img" id="almanac-icon-img" style="width:1.6rem;height:1.6rem;" alt=""><span class="notif-dot" id="almanac-corner-dot"></span></button>
     <div id="unlock-popup"><img class="icon-img" id="unlock-star-l" style="width:1em;height:1em;" alt=""> <span id="unlock-popup-text">New Enemy Entry Unlocked!</span> <img class="icon-img" id="unlock-star-r" style="width:1em;height:1em;" alt=""></div>
-    <div id="lion-tutorial-popup"><span id="lion-tutorial-text"></span><span class="lion-tutorial-sub">Double tap to continue</span></div>
+    <div id="lion-tutorial-popup"><span id="lion-tutorial-text"></span><span id="lion-tutorial-sub" class="lion-tutorial-sub">Double tap to continue</span></div>
 
     <div id="shop-modal" class="modal">
         <div class="modal-header">
@@ -6061,11 +6063,14 @@
             lastTapTime = now;
         }, { passive: false, capture: true });
 
-        // --- Mythic: Sandstorm Mane (Lion) double-tap detection. Tracked independently of the
+        // --- Mythic: Sandstorm Mane (Lion) gesture detection. Tracked independently of the
         // drag-to-move handlers above so it still works while gameState is 'paused' for one of
         // the lion's own one-time tutorial popups (normal movement/dragging requires 'playing',
-        // but dismissing those popups shouldn't). A "tap" is a short, low-movement press; two
-        // taps within 350ms of each other count as a double tap. ---
+        // but dismissing those popups shouldn't). A release counts as a "tap" if it moved only a
+        // little and happened quickly (two of those within 350ms is a double tap); a release
+        // that moved further counts as a "swipe" instead. The "Double tap to dash!" tutorial is
+        // dismissed by a double tap (matching the trigger gesture); the "Swipe to change dash
+        // direction!" tutorial is dismissed by a swipe instead (matching that gesture). ---
         let lionTapStartX = 0, lionTapStartY = 0, lionTapStartTime = 0, lionLastTapTime = 0;
         function lionTapStart(e) {
             const t = e.touches ? e.touches[0] : e;
@@ -6075,8 +6080,20 @@
             if (gameState !== 'playing' && !lionTutorialPause) return;
             if (e.target && e.target.closest && e.target.closest('button, .inv-item, .shop-tab, .toggle-btn, [onclick]')) return;
             const t = e.changedTouches ? e.changedTouches[0] : e;
-            let moved = Math.hypot(t.clientX - lionTapStartX, t.clientY - lionTapStartY);
+            let dx = t.clientX - lionTapStartX, dy = t.clientY - lionTapStartY;
+            let moved = Math.hypot(dx, dy);
             let heldTime = Date.now() - lionTapStartTime;
+            // "Swipe to change dash direction!" is waiting on a swipe, not a tap - use the
+            // swipe's own direction as the redirect, same as a normal in-aim-window swipe would.
+            if (lionTutorialPause === 'aimhalf') {
+                lionLastTapTime = 0;
+                if (moved > 20) {
+                    let dir = userSettings.invert ? -1 : 1;
+                    player.lionAimAngle = Math.atan2(dy * dir, dx * dir);
+                    dismissLionTutorial();
+                }
+                return;
+            }
             if (moved > 16 || heldTime > 300) { lionLastTapTime = 0; return; }
             let now = Date.now();
             if (now - lionLastTapTime <= 350) {
@@ -6100,20 +6117,26 @@
             playSFX('bull_charge');
         }
 
-        // Central double-tap handler: dismisses whichever lion tutorial popup is currently
-        // pausing the game (if any - dismissing the "Double tap to dash!" popup doubles as the
-        // triggering double-tap, so it also starts the aim window), otherwise triggers the dash
+        // Dismisses whichever lion tutorial popup is currently pausing the game and resumes
+        // play. Dismissing "Double tap to dash!" doubles as the triggering double-tap, so it
+        // also starts the aim window; dismissing "Swipe to change dash direction!" just lets the
+        // aim window (already mid-way through) resume counting down from where it was frozen.
+        function dismissLionTutorial() {
+            let which = lionTutorialPause;
+            lionTutorialPause = null;
+            hideLionTutorial();
+            if (gameState === 'paused') gameState = previousState || 'playing';
+            if (which === 'ringfull') { storage.set('lionRingTutorialSeen', 'true'); startLionAim(); }
+            else if (which === 'aimhalf') { storage.set('lionAimTutorialSeen', 'true'); }
+        }
+
+        // Double-tap handler: dismisses the "Double tap to dash!" popup if it's up (see
+        // dismissLionTutorial), ignores double taps while "Swipe to change dash direction!" is up
+        // (that one only listens for a swipe - see lionTapEnd), otherwise triggers the dash
         // normally once the ring is full and nothing else lion-related is already in progress.
         function handleLionDoubleTap() {
-            if (lionTutorialPause) {
-                let which = lionTutorialPause;
-                lionTutorialPause = null;
-                hideLionTutorial();
-                if (gameState === 'paused') gameState = previousState || 'playing';
-                if (which === 'ringfull') { storage.set('lionRingTutorialSeen', 'true'); startLionAim(); }
-                else if (which === 'aimhalf') { storage.set('lionAimTutorialSeen', 'true'); }
-                return;
-            }
+            if (lionTutorialPause === 'ringfull') { dismissLionTutorial(); return; }
+            if (lionTutorialPause) return;
             if (gameState !== 'playing') return;
             if ((runItems.mythic_desertlion || 0) <= 0) return;
             if (player.lionAimTimer > 0 || player.lionDashTimer > 0) return;
@@ -6121,9 +6144,10 @@
             startLionAim();
         }
 
-        function showLionTutorial(text) {
+        function showLionTutorial(text, subText) {
             let el = document.getElementById('lion-tutorial-popup');
             document.getElementById('lion-tutorial-text').textContent = text;
+            document.getElementById('lion-tutorial-sub').textContent = subText || 'Double tap to continue';
             el.style.display = 'block';
             requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
         }
@@ -6132,6 +6156,7 @@
             el.classList.remove('show');
             setTimeout(() => { if (!el.classList.contains('show')) el.style.display = 'none'; }, 300);
         }
+
 
         // SECTION 7 - GAME LOGIC & PHYSICS
         // Central update loop, physics calculations, AI, and collision.
@@ -6270,7 +6295,7 @@
                                 // handleLionDoubleTap) doubles as the triggering double-tap.
                                 if (!lionTutorialPause && storage.get('lionRingTutorialSeen') !== 'true') {
                                     lionTutorialPause = 'ringfull';
-                                    showLionTutorial('Double tap to dash!');
+                                    showLionTutorial('Double tap to dash!', 'Double tap to continue');
                                     previousState = gameState; gameState = 'paused';
                                 }
                             }
@@ -6289,7 +6314,7 @@
                         // counting down from there once dismissed.
                         if (!wasHalf && nowHalf && !lionTutorialPause && storage.get('lionAimTutorialSeen') !== 'true') {
                             lionTutorialPause = 'aimhalf';
-                            showLionTutorial('Swipe to change dash direction!');
+                            showLionTutorial('Swipe to change dash direction!', 'Swipe to continue');
                             previousState = gameState; gameState = 'paused';
                         }
                         if (player.lionAimTimer <= 0) {
