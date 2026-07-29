@@ -2583,7 +2583,15 @@
         // every map doesn't cast shadows the same way, but held constant for the whole level once
         // picked, same as a real sun's angle would be for the duration of one day.
         function recomputeShadowLight() {
-            let angle = Math.random() * Math.PI * 2;
+            // Constrained to a narrow arc around straight-down on screen - "5 o'clock" to
+            // "7 o'clock" - instead of the old full 360° randomization. That old range let
+            // shadows point sideways or even upward on some levels (an unbelievable light
+            // source), and a strongly sideways shadowDir is also what made round tree
+            // canopies (see getTreeShadowOutline's rigid-part comment) most prone to
+            // self-intersecting into a jagged, holed silhouette: a mostly-vertical vector
+            // keeps every level's light reading as a believable, roughly-overhead sun while
+            // still leaning a little left or right from level to level.
+            let angle = Math.PI / 3 + Math.random() * (Math.PI / 3); // 60°..120°, i.e. 5..7 o'clock
             shadowDir = { x: Math.cos(angle), y: Math.sin(angle) };
         }
         // Looks up the hex tile (if any) under a world point - undefined means the point is
@@ -8065,6 +8073,17 @@
             if (opacity <= 0) return;
             let rings = outline.parts.map(part => {
                 let maxUp = part.maxUp || 1;
+                // Rigid parts (see getTreeShadowOutline's round-canopy comment) slide every
+                // point by one shared height fraction - taken from rigidY, the part's own
+                // "sits at roughly this height" reference - instead of each point's own y.
+                // A round canopy is a single roughly-uniform-height blob, not a tapered
+                // cone, so per-vertex height (used for the pointy canopies below) would slide
+                // its top points much further than its bottom ones and fold the circle's
+                // outline back on itself into a jagged, holed silhouette.
+                if (part.rigid) {
+                    let h = Math.min(safeFrac, Math.max(0, Math.min(1, -(part.rigidY || 0) / maxUp)));
+                    return part.pts.map(p => ({ x: baseX + p.x + dx * h, y: baseY + p.y * 0.2 + dy * h }));
+                }
                 return part.pts.map(p => {
                     let h = Math.min(safeFrac, Math.max(0, Math.min(1, -p.y / maxUp)));
                     return { x: baseX + p.x + dx * h, y: baseY + p.y * 0.2 + dy * h };
@@ -8078,7 +8097,9 @@
         // stand-in collision circle. Returned as separate trunk/canopy parts (see
         // projectSilhouetteShadow above for why they can't be one combined ring). maxUp on each
         // part is the local y (negated, since up is negative y) of that part's own highest
-        // point.
+        // point. The round (variant 1) canopies are marked rigid with a rigidY reference point
+        // instead - see projectSilhouetteShadow's rigid-part handling for why a round blob
+        // needs one shared height rather than per-vertex height.
         function getTreeShadowOutline(t) {
             let r = t.radius;
             let variant = t.variant || 0;
@@ -8086,11 +8107,11 @@
             let trunk = { pts: [{ x: -r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: r * 0.8 }, { x: -r * 0.2, y: r * 0.8 }], maxUp: r * 0.1 };
             let canopy;
             if (desertLike) {
-                if (variant === 1) canopy = { pts: shadowCirclePoints(0, -r * 0.3, r * 0.65, 6), maxUp: r * 0.95 };
+                if (variant === 1) canopy = { pts: shadowCirclePoints(0, -r * 0.3, r * 0.65, 6), maxUp: r * 0.95, rigid: true, rigidY: -r * 0.3 };
                 else if (variant === 2) canopy = { pts: [{ x: -r * 0.3, y: r * 0.5 }, { x: r * 0.3, y: r * 0.5 }, { x: r * 0.3, y: -r }, { x: -r * 0.3, y: -r }], maxUp: r * 1.5 };
                 else canopy = { pts: [{ x: -r * 0.4, y: r * 0.5 }, { x: r * 0.4, y: r * 0.5 }, { x: r * 0.4, y: -r }, { x: -r * 0.4, y: -r }], maxUp: r * 1.5 };
             } else {
-                if (variant === 1) canopy = { pts: shadowCirclePoints(0, -r * 0.55, r * 0.9, 8), maxUp: r * 1.45 };
+                if (variant === 1) canopy = { pts: shadowCirclePoints(0, -r * 0.55, r * 0.9, 8), maxUp: r * 1.45, rigid: true, rigidY: -r * 0.55 };
                 else if (variant === 2) canopy = { pts: [{ x: -r * 0.6, y: r * 0.4 }, { x: 0, y: -r * 1.6 }, { x: r * 0.6, y: r * 0.4 }], maxUp: r * 1.6 };
                 else canopy = { pts: [{ x: -r, y: r * 0.5 }, { x: 0, y: -r * 1.5 }, { x: r, y: r * 0.5 }], maxUp: r * 1.5 };
             }
