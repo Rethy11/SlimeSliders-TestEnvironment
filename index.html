@@ -3890,7 +3890,7 @@
                         x: bPos.x, y: bPos.y, radius: bDef.radius, speed: (baseSpeed + 0.3) * bDef.speedMult,
                         type: 'boss', bossId: stageBossId, isBoss: true, angle: Math.random() * Math.PI * 2,
                         hp: BOSS_HITS_REQUIRED, maxHp: BOSS_HITS_REQUIRED, iframe: 0, hitFlash: 0,
-                        state: 'cooldown', stateTimer: 0, attackIndex: 0, animTimer: Math.random() * 1000,
+                        state: 'cooldown', stateTimer: 0, animTimer: Math.random() * 1000,
                         cooldownFrames: 90 + Math.floor(Math.random() * 60)
                     };
                     enemies.push(boss); levelEnemiesSpawned++;
@@ -6637,8 +6637,17 @@
 
                                 e.stateTimer++;
                                 if (e.stateTimer >= (e.cooldownFrames || 120)) {
-                                    e.currentAttack = attacks[e.attackIndex % attacks.length];
-                                    e.attackIndex++;
+                                    // Pick the next attack randomly rather than cycling through
+                                    // them in a fixed order - if there's more than one option,
+                                    // avoid repeating the just-used attack back-to-back so fights
+                                    // stay varied instead of occasionally feeling stuck.
+                                    if (attacks.length > 1) {
+                                        let nextAttack;
+                                        do { nextAttack = attacks[Math.floor(Math.random() * attacks.length)]; } while (nextAttack === e.currentAttack);
+                                        e.currentAttack = nextAttack;
+                                    } else {
+                                        e.currentAttack = attacks[0];
+                                    }
                                     e.state = 'telegraph'; e.stateTimer = 0;
                                 }
                             } else if (e.state === 'telegraph') {
