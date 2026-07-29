@@ -1518,6 +1518,11 @@
         let fences = [];
         let items = []; let enemies = []; let trees = []; let hives = [];
         let projectiles = []; let icicles = []; let flameParticles = []; let leaves = [];
+        // Yeti's Avalanche Charge leaves these behind instead of live bullets: stationary
+        // blocks of ice, each {x,y,radius,bossId}, that sit harmlessly until the player
+        // touches one, at which point it explodes into an outward ring of bullets (see the
+        // iceBlocks collision/explosion block in update() and its 'iceblock' render branch).
+        let iceBlocks = [];
         let splashes = []; let decorations = []; let powerups = []; let chest = null;
         // Roguelite: Skeleton Key item - one extra bonus chest per stack, placed alongside the
         // level's normal chest. Kept as its own array (rather than reusing `chest`) since there
@@ -1567,6 +1572,13 @@
         let bossItemsAwarded = {};
         let companions = [];
         let playerTrail = [];
+        // Mythic: Royal Jelly (King Slime) - periodically summoned homing slimes, each
+        // {x,y,radius,colorId,vx,vy}. Function exactly like Slime Squad companions (mutually
+        // destroy any enemy they touch, die to enemy projectiles) except they seek out the
+        // nearest enemy within ROYAL_JELLY_HOME_RANGE instead of following the player's trail.
+        // Kept as its own array (rather than reusing `companions`) since these are transient
+        // summons on a recurring timer, not a persistent stack tied to an owned item count.
+        let royalJellySlimes = [];
         // Hex tiles the player has slid over while the Glacier ("ice") skin is equipped - these
         // render with Snow-biome ground colors for the rest of the level (see drawIceFrostOverlay).
         let iceFrostedTiles = new Set();
@@ -1602,7 +1614,7 @@
             // it from the Dupe Trader (see dupeShopStock()).
             greedy:      { id: 'greedy',      rarity: 'common',    name: 'Greedy',      desc: 'Increases gold earned. Corrupts, wholly.' },
             slimefriend: { id: 'slimefriend', rarity: 'epic',      name: 'Slime Squad', desc: 'Summons a slimy friend and makes you immune to other slimes. Each stack adds another companion.', lockedBy: 'level3' },
-            plasmabeam:  { id: 'plasmabeam',  rarity: 'epic',      name: 'Plasma Beam', desc: 'Charges up, then zaps the nearest enemy in range. Each stack hits one more enemy and extends the range by a tile.', lockedBy: 'endless_level6' },
+            plasmabeam:  { id: 'plasmabeam',  rarity: 'epic',      name: 'Plasma Beam', desc: 'Charges up, then zaps the nearest enemy in range. Each stack hits one more enemy and extends the range by half a tile.', lockedBy: 'endless_level6' },
             // Dupe Shop exclusive (epic) - see note on greedy above.
             devildeal:   { id: 'devildeal',   rarity: 'epic',      name: 'Devil Deal',  desc: 'Prevents death once. Zero downsides! ' },
             shuriken:    { id: 'shuriken',    rarity: 'legendary', name: 'Shuriken',    desc: 'Orbiting blades circle you, deflecting bullets and slaying enemies they touch. Each stack adds another blade.', lockedBy: 'centurion' },
@@ -1619,17 +1631,17 @@
             // passive proc (reusing the icicles[] projectile - it already damages every enemy,
             // bosses included, on contact) plus a bit of extra utility beyond just the attack.
             mythic_kingslime: { id: 'mythic_kingslime', rarity: 'mythic', bossId: 'kingslime', name: 'Royal Jelly',
-                desc: 'Periodically splits off slime globs that seek out and pop enemies, mimicking King Slime\'s own Slime Split - and pulls in any loot they knock loose. Each stack fires more globs and more often.' },
+                desc: 'Periodically summons two angry gacha slimes at your sides, mimicking King Slime\'s own Slime Split - they home in on the nearest enemy and attack.' },
             mythic_desertlion: { id: 'mythic_desertlion', rarity: 'mythic', bossId: 'desertlion', name: 'Sandstorm Mane',
-                desc: 'Charges up a ring, then stays ready - double tap to plant yourself in place, swipe to aim, and unleash a short invincible Sand Pounce dash that kills every enemy in your path. Each stack charges the ring faster.' },
+                desc: 'Charges up a ring, then stays ready - double tap to plant yourself in place, swipe to aim, and unleash a short invincible Sand Pounce dash that kills every enemy in your path.' },
             mythic_yeti: { id: 'mythic_yeti', rarity: 'mythic', bossId: 'yeti', name: 'Frostbound Horn',
-                desc: 'Periodically unleashes the Yeti\'s own Frost Breath - a spray of many icicle shards toward wherever you\'re heading. Each stack fires more shards and more often.' },
+                desc: 'Periodically unleashes the Yeti\'s own Frost Breath - a spray of many icicle shards toward wherever you\'re heading.' },
             mythic_lavaworm: { id: 'mythic_lavaworm', rarity: 'mythic', bossId: 'lavaworm', name: 'Molten Core',
-                desc: 'Periodically erupts in a Magma Burst of embers, melting a little extra gold out of the ground each time. Each stack fires more embers and more often.' },
+                desc: 'Periodically erupts in a Magma Burst of embers, melting a little extra gold out of the ground each time.' },
             mythic_crocodile: { id: 'mythic_crocodile', rarity: 'mythic', bossId: 'crocodile', name: 'Ancient Jaws',
-                desc: 'Periodically lashes out with a Tail Sweep and snaps any nearby projectiles out of the air. Each stack fires more shards and more often.' },
+                desc: 'Periodically lashes out with a Tail Sweep and snaps any nearby projectiles out of the air.' },
             mythic_bear: { id: 'mythic_bear', rarity: 'mythic', bossId: 'bear', name: 'Timberclaw',
-                desc: 'Periodically slams the ground in a Ground Pound that also shoves every nearby enemy back. Each stack fires more shards and more often.' }
+                desc: 'Periodically slams the ground in a Ground Pound that also shoves every nearby enemy back.' }
         };
 
         // Achievement definitions. Each check() reads from persisted storage / in-memory state
@@ -1927,6 +1939,28 @@
         function bossTelegraphAoe(e, x, y, radius, delayFrames) {
             bossTelegraphs.push({ x, y, radius, timer: delayFrames, duration: delayFrames, bossId: e.bossId });
         }
+        // Yeti's Avalanche Charge trail hazard (iceBlocks): besides bursting when the player
+        // walks into one directly, it should also go off if the player damages it any other
+        // way - shuriken, plasma beam, icicles, powerups, companions, the Lion dash, etc.
+        // Every one of those call sites hits this same helper instead of duplicating the
+        // burst logic. Checks every block in hitRadius (not just the first) so a wide-area
+        // attack can pop more than one at once.
+        // Bursts a single iceBlock (by its current index) into a ring of bullets. Safe to call
+        // while iterating iceBlocks backwards (see explodeIceBlockAt and the various player
+        // damage-source call sites below) since it only ever splices the one index given.
+        function explodeIceBlockIndex(i) {
+            let ib = iceBlocks[i];
+            iceBlocks.splice(i, 1);
+            bossFireRadial({ x: ib.x, y: ib.y, bossId: ib.bossId, animTimer: 0 }, 8, 3.2, 8);
+            screenShake = Math.max(screenShake, 8);
+            playSFX('ice_nova');
+        }
+        function explodeIceBlockAt(x, y, hitRadius) {
+            for (let i = iceBlocks.length - 1; i >= 0; i--) {
+                let ib = iceBlocks[i];
+                if (dist(x, y, ib.x, ib.y) < hitRadius + ib.radius) explodeIceBlockIndex(i);
+            }
+        }
 
         // Every boss attack: { name, telegraph (frames of windup), duration (frames the attack
         // itself plays out over), cooldown (frames of recovery before the next pick), exec(e)
@@ -1987,10 +2021,13 @@
                         exec: (e) => { e._breathTicks = 6; },
                         tick: (e) => { if (e._breathTicks > 0 && e.stateTimer % 8 === 0) { bossFireAimedSpread(e, 2, 0.35, 2.6, 8); e._breathTicks--; } }
                     },
-                    { // Avalanche Charge - charges across the map leaving a trail of icicle shards
+                    { // Avalanche Charge - charges across the map leaving a trail of stationary
+                      // ice blocks behind it. Each block sits harmlessly until the player
+                      // touches it, then explodes into an outward ring of bullets (see the
+                      // iceBlocks handling in update()).
                         name: 'Avalanche Charge', telegraph: 65, duration: 60, cooldown: 170, dash: true,
                         exec: (e) => { playSFX('bull_charge'); },
-                        tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 2.4; e.y += Math.sin(e.chargeAngle) * e.speed * 2.4; if (e.stateTimer % 12 === 0) projectiles.push({ x: e.x, y: e.y, vx: 0, vy: 0.01, radius: 10, bossId: e.bossId }); }
+                        tick: (e) => { e.x += Math.cos(e.chargeAngle) * e.speed * 2.4; e.y += Math.sin(e.chargeAngle) * e.speed * 2.4; if (e.stateTimer % 12 === 0) iceBlocks.push({ x: e.x, y: e.y, radius: 14, bossId: e.bossId }); }
                     }
                 ]
             },
@@ -2954,15 +2991,26 @@
         const LION_DASH_DISTANCE = 2.5 * HEX_TILE_DIST;
         const LION_DASH_FRAMES = 14;
         const LION_DASH_SPEED = LION_DASH_DISTANCE / LION_DASH_FRAMES;
+        // Royal Jelly (King Slime mythic item): how far a summoned slime will look for a
+        // target before giving up and just idling in place.
+        const ROYAL_JELLY_HOME_RANGE = 5 * HEX_TILE_DIST;
 
         const mythicItemEngine = {
             mythic_kingslime: {
                 baseInterval: 480, tint: '#3fd67a',
+                // Mimics King Slime's own Slime Split: summons two angry gacha slimes flanking
+                // the player (left/right of whichever way they're facing) that then home in on
+                // the nearest enemy within ROYAL_JELLY_HOME_RANGE and attack. Otherwise these
+                // function exactly like Slime Squad companions - see the royalJellySlimes
+                // movement/collision blocks in update() - just homing instead of trailing.
                 proc: (count) => {
-                    let n = 4 + count; let speed = 3;
-                    for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 260, radius: 8, tint: '#3fd67a' }); }
-                    // Utility: yank any loose loot within range straight to the player.
-                    for (let it of items) { if (it.collected || it.beingEaten) continue; let d = dist(player.worldX, player.worldY, it.x, it.y); if (d < 200 && d > 1) { let dx = player.worldX - it.x, dy = player.worldY - it.y; it.vx += (dx/d)*6; it.vy += (dy/d)*6; } }
+                    let facing = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
+                    let sides = [facing - Math.PI / 2, facing + Math.PI / 2];
+                    for (let side of sides) {
+                        let sx = player.worldX + Math.cos(side) * (player.radius + 26);
+                        let sy = player.worldY + Math.sin(side) * (player.radius + 26);
+                        royalJellySlimes.push({ x: sx, y: sy, prevX: sx, prevY: sy, radius: 16, colorId: 'red', vx: 0, vy: 0, isRoyalJelly: true });
+                    }
                     playSFX('enemy_hit');
                 }
             },
@@ -3639,7 +3687,7 @@
         }
 
         function generateLevel() {
-            items = []; enemies = []; trees = []; hives = []; decorations = []; projectiles = []; icicles = [];
+            items = []; enemies = []; trees = []; hives = []; decorations = []; projectiles = []; icicles = []; iceBlocks = [];
             flameParticles = []; leaves = []; splashes = []; powerups = []; chest = null; fishingScene = null; skeletonChests = []; surviveChests = []; skinTrader = null; goldTrader = null; docks = [];
             hexTiles = new Map(); landHexList = []; holeHexList = []; borderHexList = []; fences = [];
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.hazardTimer = 0; player.spikesTimer = 0;
@@ -3663,9 +3711,13 @@
             // reset the trail buffer they follow so they don't rush in from a previous level.
             companions = [];
             playerTrail = [];
+            // Mythic: Royal Jelly's summoned homing slimes don't persist across levels either -
+            // they'll be re-summoned fresh by its own recurring timer.
+            royalJellySlimes = [];
             iceFrostedTiles.clear();
             lavaScorchedTiles.clear(); fairyBloomTiles.clear(); goldenTiles.clear(); goldenHazardTiles.clear(); acidTrail = [];
             syncCompanionsToStack();
+
 
             // Rare Survival level type: rolled fresh each level-up (never on level 1, and never
             // twice in a row). If it hits, hand off to its own dedicated generator entirely -
@@ -6259,10 +6311,18 @@
                     let e = enemies[i];
                     if (dist(player.worldX, player.worldY, e.x, e.y) < pu.radius && Math.abs(normalizeAngle(Math.atan2(e.y - player.worldY, e.x - player.worldX) - facing)) <= Math.PI / 2.1) destroyEnemyByIndex(i, pu.coinDrop);
                 }
+                for (let bi = iceBlocks.length - 1; bi >= 0; bi--) {
+                    let ib = iceBlocks[bi];
+                    if (dist(player.worldX, player.worldY, ib.x, ib.y) < pu.radius + ib.radius && Math.abs(normalizeAngle(Math.atan2(ib.y - player.worldY, ib.x - player.worldX) - facing)) <= Math.PI / 2.1) explodeIceBlockIndex(bi);
+                }
             } else if (pu.mode === 'beam') {
                 let target = getLightningTargetWorld();
                 for (let i = enemies.length - 1; i >= 0; i--) {
                     if (distToSegment(enemies[i].x, enemies[i].y, player.worldX, player.worldY, target.x, target.y) < pu.radius + enemies[i].radius) destroyEnemyByIndex(i, pu.coinDrop);
+                }
+                for (let bi = iceBlocks.length - 1; bi >= 0; bi--) {
+                    let ib = iceBlocks[bi];
+                    if (distToSegment(ib.x, ib.y, player.worldX, player.worldY, target.x, target.y) < pu.radius + ib.radius) explodeIceBlockIndex(bi);
                 }
             } else if (pu.mode === 'nova') {
                 playSFX('ice_nova');
@@ -6284,6 +6344,7 @@
             camera.prevX = camera.x; camera.prevY = camera.y;
             for (let i = 0; i < enemies.length; i++) { enemies[i].prevX = enemies[i].x; enemies[i].prevY = enemies[i].y; }
             for (let i = 0; i < companions.length; i++) { companions[i].prevX = companions[i].x; companions[i].prevY = companions[i].y; }
+            for (let i = 0; i < royalJellySlimes.length; i++) { royalJellySlimes[i].prevX = royalJellySlimes[i].x; royalJellySlimes[i].prevY = royalJellySlimes[i].y; }
 
             manageBeeBuzzing();
 
@@ -6319,6 +6380,25 @@
                             // than always rendering with its mouth in the neutral idle smile.
                             comp.vx = comp.x - comp.prevX;
                             comp.vy = comp.y - comp.prevY;
+                        }
+                    }
+
+                    // Mythic: Royal Jelly's summoned slimes - unlike Slime Squad companions
+                    // (which trail the player), these home in on whichever enemy is nearest,
+                    // as long as one is within ROYAL_JELLY_HOME_RANGE. No target in range yet?
+                    // Just idle in place until one wanders close enough.
+                    if (royalJellySlimes.length > 0) {
+                        for (let ji = 0; ji < royalJellySlimes.length; ji++) {
+                            let js = royalJellySlimes[ji];
+                            let nearestE = null, nearestD = ROYAL_JELLY_HOME_RANGE;
+                            for (let ei = 0; ei < enemies.length; ei++) {
+                                let e = enemies[ei];
+                                let d = dist(js.x, js.y, e.x, e.y);
+                                if (d < nearestD) { nearestD = d; nearestE = e; }
+                            }
+                            if (nearestE) { js.x += (nearestE.x - js.x) * 0.1; js.y += (nearestE.y - js.y) * 0.1; }
+                            js.vx = js.x - js.prevX;
+                            js.vy = js.y - js.prevY;
                         }
                     }
 
@@ -6427,6 +6507,7 @@
                                 let e = enemies[j];
                                 if (dist(sx, sy, e.x, e.y) < 11 + e.radius) { destroyEnemyByIndex(j, [1,2]); screenShake = Math.max(screenShake, 5); }
                             }
+                            explodeIceBlockAt(sx, sy, 11);
                             for (let p of projectiles) {
                                 if (!p.deflected && dist(sx, sy, p.x, p.y) < 11 + p.radius) {
                                     let normAngle = Math.atan2(p.y - sy, p.x - sx); let speed = Math.hypot(p.vx, p.vy) * 1.3;
@@ -6444,7 +6525,7 @@
                         player.plasmaTimer = (player.plasmaTimer || 0) + 1/60;
                         if (player.plasmaTimer >= 3) {
                             player.plasmaTimer = 0;
-                            let plasmaRange = (3 + (plasmaStacks - 1)) * HEX_TILE_DIST;
+                            let plasmaRange = (3 + (plasmaStacks - 1) * 0.5) * HEX_TILE_DIST;
                             let targets = [];
                             for (let ei = 0; ei < enemies.length; ei++) {
                                 let e = enemies[ei];
@@ -6462,6 +6543,13 @@
                                 for (let t of targets) {
                                     plasmaBeamFX.push({ x1: player.worldX, y1: player.worldY, x2: t.x, y2: t.y, life: 0.22, maxLife: 0.22 });
                                     destroyEnemyByIndex(t.idx, [1,2]);
+                                }
+                            }
+                            for (let bi = iceBlocks.length - 1; bi >= 0; bi--) {
+                                let ib = iceBlocks[bi];
+                                if (dist(player.worldX, player.worldY, ib.x, ib.y) <= plasmaRange) {
+                                    plasmaBeamFX.push({ x1: player.worldX, y1: player.worldY, x2: ib.x, y2: ib.y, life: 0.22, maxLife: 0.22 });
+                                    explodeIceBlockIndex(bi);
                                 }
                             }
                         }
@@ -6849,6 +6937,28 @@
                         }
                     }
 
+                    // Mythic: Royal Jelly's summoned slimes mutually destroy any enemy they
+                    // touch too - identical rule to companions above, just a separate array.
+                    for (let ji = royalJellySlimes.length - 1; ji >= 0; ji--) {
+                        let js = royalJellySlimes[ji];
+                        for (let ej = enemies.length - 1; ej >= 0; ej--) {
+                            let e = enemies[ej];
+                            if (dist(js.x, js.y, e.x, e.y) < js.radius + e.radius) {
+                                destroyEnemyByIndex(ej, [1,2]);
+                                royalJellySlimes.splice(ji, 1);
+                                screenShake = Math.max(screenShake, 8);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Ice blocks also go off if a companion or Royal Jelly slime bumps into
+                    // one - they're the player's own summons, so this counts as player damage.
+                    // The block is destroyed but the slime itself isn't (unlike touching a live
+                    // enemy) - it's a hazard, not something to trade a companion for.
+                    for (let ci = companions.length - 1; ci >= 0; ci--) { let comp = companions[ci]; explodeIceBlockAt(comp.x, comp.y, comp.radius); }
+                    for (let ji = royalJellySlimes.length - 1; ji >= 0; ji--) { let js = royalJellySlimes[ji]; explodeIceBlockAt(js.x, js.y, js.radius); }
+
                     // Dupe Shop item: Spectre. Each stack raises how much the pass-through
                     // speed boost multiplies velocity by - "slight" at 1 stack, more at higher
                     // stacks. Decays back to normal on its own via the existing friction applied
@@ -6946,6 +7056,19 @@
                             }
                         }
                         if (hitObstacle) continue;
+                        // Mythic: Royal Jelly's summoned slimes die to enemy projectiles too,
+                        // same rule as companions above.
+                        for (let j = royalJellySlimes.length - 1; j >= 0; j--) {
+                            let js = royalJellySlimes[j];
+                            if (dist(p.x, p.y, js.x, js.y) < p.radius + js.radius) {
+                                royalJellySlimes.splice(j, 1); // Slime dies
+                                projectiles.splice(i, 1); // Projectile eliminated
+                                playSFX('enemy_hit');
+                                hitObstacle = true;
+                                break;
+                            }
+                        }
+                        if (hitObstacle) continue;
                     let nearTreesProj = getNearbyTrees(p.x, p.y);
                     for (let ti = 0; ti < nearTreesProj.length; ti++) {
                         let t = nearTreesProj[ti];
@@ -6984,6 +7107,7 @@
                         for (let j = enemies.length - 1; j >= 0; j--) {
                             if (dist(p.x, p.y, enemies[j].x, enemies[j].y) < p.radius + enemies[j].radius) { destroyEnemyByIndex(j, [1,2]); projectiles.splice(i, 1); break; }
                         }
+                        explodeIceBlockAt(p.x, p.y, p.radius);
                     }
                 }
             }
@@ -6994,8 +7118,20 @@
                 ic.x += ic.vx; ic.y += ic.vy; ic.traveled += Math.hypot(ic.vx, ic.vy);
                 if (gameState === 'playing') {
                     for (let j = enemies.length - 1; j >= 0; j--) { if (dist(ic.x, ic.y, enemies[j].x, enemies[j].y) < ic.radius + enemies[j].radius) destroyEnemyByIndex(j, [2,4]); }
+                    explodeIceBlockAt(ic.x, ic.y, ic.radius);
                 }
                 if (ic.traveled > ic.maxRange) icicles.splice(i, 1);
+            }
+
+            // Yeti's Avalanche Charge trail: stationary blocks of ice that sit harmlessly
+            // until damaged - by the player walking into one directly (here), or by any of the
+            // player's attacks (shuriken/plasma beam/icicles/powerups/companions/deflected
+            // bullets - see the explodeIceBlockAt/explodeIceBlockIndex calls throughout this
+            // file). Either way it bursts into an outward ring of bullets.
+            for (let i = iceBlocks.length - 1; i >= 0; i--) {
+                let ib = iceBlocks[i];
+                if (!isNearScreen(ib.x, ib.y)) { iceBlocks.splice(i, 1); continue; }
+                if (gameState === 'playing' && dist(player.worldX, player.worldY, ib.x, ib.y) < player.radius + ib.radius) explodeIceBlockIndex(i);
             }
 
             for (let i = flameParticles.length - 1; i >= 0; i--) { let f = flameParticles[i];
@@ -8557,6 +8693,7 @@
             for (let i = 0; i < enemies.length; i++) { let e = enemies[i]; if (isOnScreen(e.x + tiltX, e.y + tiltY, cullBuffer)) pushRQ('enemy', e, e.y + (e.radius || 0)); }
             for (let i = 0; i < items.length; i++) { let c = items[i]; if (!c.collected && isOnScreen(c.x + tiltX, c.y + tiltY, cullBuffer)) pushRQ(c.type, c, c.y + (c.radius || 0)); }
             for (let i = 0; i < projectiles.length; i++) { let p = projectiles[i]; if (isOnScreen(p.x + tiltX, p.y + tiltY, cullBuffer)) pushRQ('projectile', p, p.y + (p.radius || 0)); }
+            for (let i = 0; i < iceBlocks.length; i++) { let ib = iceBlocks[i]; if (isOnScreen(ib.x + tiltX, ib.y + tiltY, cullBuffer)) pushRQ('iceblock', ib, ib.y + (ib.radius || 0)); }
             for (let i = 0; i < icicles.length; i++) { let ic = icicles[i]; if (isOnScreen(ic.x + tiltX, ic.y + tiltY, cullBuffer)) pushRQ('icicle', ic, ic.y + (ic.radius || 0)); }
             for (let i = 0; i < flameParticles.length; i++) { let f = flameParticles[i]; if (player.color === 'corrupted' && f.source === 'firecone') continue; if (isOnScreen(f.x + tiltX, f.y + tiltY, cullBuffer)) pushRQ('flame', f, f.y + (f.radius || 0)); }
             for (let i = 0; i < leaves.length; i++) { let l = leaves[i]; if (isOnScreen(l.x + tiltX, l.y + tiltY, cullBuffer)) pushRQ('leaf', l, l.y + (l.radius || 0)); }
@@ -8564,6 +8701,7 @@
             for (let i = 0; i < acidTrail.length; i++) { let a = acidTrail[i]; if (isOnScreen(a.x + tiltX, a.y + tiltY, cullBuffer)) pushRQ('acid', a, a.y - a.radius); }
             for (let i = 0; i < powerups.length; i++) { let p = powerups[i]; if (!p.collected && isOnScreen(p.x + tiltX, p.y + tiltY, cullBuffer)) pushRQ('powerup', p, p.y + (p.radius || 0)); }
             for (let i = 0; i < companions.length; i++) { let cs = companions[i]; if (isOnScreen(cs.x + tiltX, cs.y + tiltY, cullBuffer)) pushRQ('companion', cs, cs.y + (cs.radius || 0)); }
+            for (let i = 0; i < royalJellySlimes.length; i++) { let js = royalJellySlimes[i]; if (isOnScreen(js.x + tiltX, js.y + tiltY, cullBuffer)) pushRQ('companion', js, js.y + (js.radius || 0)); }
             if (chest && isOnScreen(chest.x + tiltX, chest.y + tiltY, cullBuffer)) pushRQ('chest', chest, chest.y + (chest.radius || 0));
             for (let i = 0; i < skeletonChests.length; i++) { let sc = skeletonChests[i]; if (isOnScreen(sc.x + tiltX, sc.y + tiltY, cullBuffer)) pushRQ('skeletonchest', sc, sc.y + (sc.radius || 0)); }
             for (let i = 0; i < surviveChests.length; i++) { let sv = surviveChests[i]; if (isOnScreen(sv.x + tiltX, sv.y + tiltY, cullBuffer)) pushRQ('chest', sv, sv.y + (sv.radius || 0)); }
@@ -9036,6 +9174,27 @@
                         ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x-2, p.y-2, p.radius*0.4, 0, Math.PI*2); ctx.fill();
                     }
                 }
+                else if (item.type === 'iceblock') {
+                    // Yeti's Avalanche Charge trail hazard: a stationary block of ice, harmless
+                    // until the player touches it (see the iceBlocks collision code in
+                    // update()), at which point it's removed and bursts into a bullet ring.
+                    let ib = item.obj;
+                    if (player.color === 'corrupted') { window.LegendaryStageEffects.corrupted.drawHitboxCircle(ctx, ib.x, ib.y, ib.radius, '#4fa3c7', 'ICE'); }
+                    else {
+                        ctx.save(); ctx.translate(ib.x, ib.y);
+                        ctx.fillStyle = 'rgba(191, 232, 245, 0.9)';
+                        ctx.strokeStyle = '#4fa3c7'; ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(-ib.radius, -ib.radius*0.6); ctx.lineTo(-ib.radius*0.6, -ib.radius);
+                        ctx.lineTo(ib.radius*0.6, -ib.radius); ctx.lineTo(ib.radius, -ib.radius*0.6);
+                        ctx.lineTo(ib.radius, ib.radius*0.6); ctx.lineTo(ib.radius*0.6, ib.radius);
+                        ctx.lineTo(-ib.radius*0.6, ib.radius); ctx.lineTo(-ib.radius, ib.radius*0.6);
+                        ctx.closePath(); ctx.fill(); ctx.stroke();
+                        ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5;
+                        ctx.beginPath(); ctx.moveTo(-ib.radius*0.4, -ib.radius*0.5); ctx.lineTo(ib.radius*0.3, ib.radius*0.55); ctx.stroke();
+                        ctx.restore();
+                    }
+                }
                 else if (item.type === 'icicle') {
                     let ic = item.obj;
                     // Corrupted Data: the player's own projectiles (icicles) render as their
@@ -9123,7 +9282,9 @@
                     // Toxic Sludge: same radioactive glow overlay as enemies above, layered
                     // behind whatever skin the companion is already wearing.
                     if (cs.irradiated) drawRadioactiveGlow(ccx, ccy, cs.radius);
-                    drawCharacterModel(ccx, ccy, cs.vx || 0, cs.vy || 0, cs.radius, cs.colorId, false, null);
+                    // Mythic: Royal Jelly's summoned slimes wear the crown to mark them as
+                    // King Slime's own - regular Slime Squad companions stay bare-headed.
+                    drawCharacterModel(ccx, ccy, cs.vx || 0, cs.vy || 0, cs.radius, cs.colorId, false, cs.isRoyalJelly ? 'crown' : null);
                     // Toxic Sludge: tint the companion's own body sickly green too, same as
                     // enemies above, on top of whatever skin it's already wearing.
                     if (cs.irradiated) drawIrradiatedTint(ccx, ccy, cs.radius);
@@ -9394,9 +9555,9 @@
             level = 1;
             score = 0; player.worldX = 0; player.worldY = 0; player.prevWorldX = 0; player.prevWorldY = 0; player.vx = 0; player.vy = 0; player.hazardTimer = 0;
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.spikesTimer = 0;
-            projectiles = []; icicles = []; flameParticles = [];
+            projectiles = []; icicles = []; flameParticles = []; iceBlocks = [];
             splashes = []; leaves = []; screenShake = 0; hives = [];
-            runItems = {}; bossItemsAwarded = {}; companions = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
+            runItems = {}; bossItemsAwarded = {}; companions = []; royalJellySlimes = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0; player.spectreBoostTimer = 0; player.mythicTimers = {};
             player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0; player.lionAimTargetAngle = 0;
             player.lionDashTimer = 0;
