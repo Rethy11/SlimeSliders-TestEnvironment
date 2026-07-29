@@ -1375,7 +1375,7 @@
             jiggleForceX: 0, jiggleForceY: 0, activePowerup: null, powerupDuration: 0,
             powerupTimeLeft: 0, powerupTickTimer: 0, facing: 0, hazardTimer: 0, spikesTimer: 0,
             plasmaTimer: 0, invulnerableTimer: 0, wilkshirianTimer: 0, spectreBoostTimer: 0,
-            lionRingCharge: 0, lionAimTimer: 0, lionAimMax: 0, lionAimAngle: 0,
+            lionRingCharge: 0, lionAimTimer: 0, lionAimMax: 0, lionAimAngle: 0, lionAimTargetAngle: 0,
             lionDashTimer: 0, lionDashAngle: 0
         };
         // Number of Devil Deal charges burned so far this run (see triggerGameOver) - tracked
@@ -3628,7 +3628,7 @@
             hexTiles = new Map(); landHexList = []; holeHexList = []; borderHexList = []; fences = [];
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.hazardTimer = 0; player.spikesTimer = 0;
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0;
-            player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0;
+            player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0; player.lionAimTargetAngle = 0;
             player.lionDashTimer = 0;
             safeGridCache.clear();
             goalUnreachable = false; goalSeen = false;
@@ -6035,7 +6035,7 @@
             // (lionAimTimer tick in update() pins vx/vy to 0), so swipes here redirect the
             // charging dash's angle instead of moving the player.
             if (player.lionAimTimer > 0) {
-                if (Math.abs(dx) + Math.abs(dy) > 1) player.lionAimAngle = Math.atan2(dy * dir, dx * dir);
+                if (Math.abs(dx) + Math.abs(dy) > 1) player.lionAimTargetAngle = Math.atan2(dy * dir, dx * dir);
             } else {
                 player.vx += dx * sensitivity * dir;
                 player.vy += dy * sensitivity * dir;
@@ -6088,7 +6088,12 @@
             const t = e.touches ? e.touches[0] : e;
             let dx = t.clientX - lionMoveX, dy = t.clientY - lionMoveY;
             let dir = userSettings.invert ? -1 : 1;
-            if (Math.abs(dx) + Math.abs(dy) > 1) player.lionAimAngle = Math.atan2(dy * dir, dx * dir);
+            if (Math.abs(dx) + Math.abs(dy) > 1) {
+                // This runs while gameState is 'paused' for the tutorial popup, so the normal
+                // per-frame easing in update() isn't ticking - set the render angle directly
+                // here (and keep the target in sync so easing doesn't jump once play resumes).
+                player.lionAimAngle = player.lionAimTargetAngle = Math.atan2(dy * dir, dx * dir);
+            }
             lionMoveX = t.clientX; lionMoveY = t.clientY;
         }
         function lionTapEnd(e) {
@@ -6105,7 +6110,7 @@
                 lionLastTapTime = 0;
                 if (moved > 20) {
                     let dir = userSettings.invert ? -1 : 1;
-                    player.lionAimAngle = Math.atan2(dy * dir, dx * dir);
+                    player.lionAimAngle = player.lionAimTargetAngle = Math.atan2(dy * dir, dx * dir);
                     dismissLionTutorial();
                 }
                 return;
@@ -6132,6 +6137,7 @@
             player.lionAimMax = LION_AIM_FRAMES;
             player.lionAimTimer = LION_AIM_FRAMES;
             player.lionAimAngle = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
+            player.lionAimTargetAngle = player.lionAimAngle;
             playSFX('bull_charge');
         }
 
@@ -6325,6 +6331,15 @@
                         let wasHalf = (1 - player.lionAimTimer / (player.lionAimMax || 1)) >= 0.5;
                         player.lionAimTimer--;
                         player.vx = 0; player.vy = 0;
+                        // Ease the rendered telegraph angle toward the raw swipe target every
+                        // frame (shortest angular path) instead of snapping straight to it on
+                        // each pointer-move event. Touch/mouse move events fire in irregular,
+                        // often coarse bursts, so setting lionAimAngle directly made the
+                        // telegraph visibly jump between angles. This mirrors how the player's
+                        // own velocity eases via `friction` every frame instead of snapping to
+                        // raw swipe deltas, which is what makes the character feel fluid.
+                        let lionAngDiff = Math.atan2(Math.sin(player.lionAimTargetAngle - player.lionAimAngle), Math.cos(player.lionAimTargetAngle - player.lionAimAngle));
+                        player.lionAimAngle += lionAngDiff * 0.35;
                         let nowHalf = (1 - player.lionAimTimer / (player.lionAimMax || 1)) >= 0.5;
                         // First time ever the aim window reaches its halfway point: freeze game
                         // logic and teach the swipe-to-redirect gesture. lionAimTimer is simply
@@ -9296,7 +9311,7 @@
             splashes = []; leaves = []; screenShake = 0; hives = [];
             runItems = {}; bossItemsAwarded = {}; companions = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0; player.spectreBoostTimer = 0; player.mythicTimers = {};
-            player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0;
+            player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0; player.lionAimTargetAngle = 0;
             player.lionDashTimer = 0;
             if (lionTutorialPause) { lionTutorialPause = null; let ltp = document.getElementById('lion-tutorial-popup'); if (ltp) { ltp.classList.remove('show'); ltp.style.display = 'none'; } }
             devilDealUsed = 0;
