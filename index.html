@@ -1065,7 +1065,18 @@
             return result;
         }
 
-        // Spatial hash grid for trees. Built once per level (after all trees are placed) and
+        // Builds a tree/rock scenery object with its cast-shadow vector pre-baked (see
+        // computeShadowVector) at creation time, so both level generators get identical
+        // treatment and draw() never has to touch the light source at all. Trees get a taller
+        // approximate height than rocks (a canopy stands well above a squat boulder of the same
+        // collision radius), so trees throw noticeably longer shadows for the same distance
+        // from the light.
+        function makeSceneryObject(x, y, radius, type, variant, seed) {
+            let objHeight = radius * (type === 'tree' ? 1.8 : 0.55);
+            let sv = computeShadowVector(x, y, objHeight);
+            return { x, y, radius, type, variant, seed, shadowDX: sv.dx, shadowDY: sv.dy };
+        }
+
         // used by the collision checks in update() so they only test trees near the entity in
         // question instead of scanning the entire trees array every tick. Tree count is set
         // randomly at level generation and can range from ~100 to 300+, so uncoiled full scans
@@ -2545,6 +2556,42 @@
         // and screen space calculations.
         // ==========================================
         function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+
+        // ---- Ambient lighting: a single imaginary light source hovering above the whole
+        // level, used to cast directional shadows off static scenery (trees/rocks) instead of
+        // the flat "always straight down" blob every other shadow in this file uses. The
+        // light's ground position is recomputed once per level (see the shadowLight.x/y
+        // assignment right after landHexList is finalized in generateLevel/generateSurvivalLevel)
+        // to sit above the map's actual centroid, so shadows radiate outward from the middle of
+        // the board and get longer the closer an object sits to the map's edge - exactly what a
+        // lamp hanging over the whole level would produce. SHADOW_LIGHT_HEIGHT is in the same
+        // world units as x/y; keeping it well above any object's own height (trees/rocks are
+        // always under ~90 units tall) is what keeps shadows short near the light and merely
+        // long - never comically infinite - out at the map's fringes.
+        const SHADOW_LIGHT_HEIGHT = 1400;
+        let shadowLight = { x: 0, y: 0 };
+        // Bakes one occluder's shadow: a single ray from the light, through the top of the
+        // object, down to where it crosses the ground plane (z=0) - the literal "ray trace"
+        // this is named for, just solved analytically via similar triangles instead of marched
+        // step by step, so it costs one sqrt-free divide per occluder. Called once per tree/rock
+        // at level-generation time and the result (a fixed {dx,dy} offset from the object's own
+        // base to its shadow's tip) is cached on the object, so draw() never recomputes it - it
+        // just offsets an ellipse by an already-known vector every frame.
+        function computeShadowVector(x, y, objHeight) {
+            let h = Math.min(objHeight, SHADOW_LIGHT_HEIGHT - 40); // keep the light strictly above the object
+            let t = h / (SHADOW_LIGHT_HEIGHT - h); // similar-triangles factor from the height ratio
+            return { dx: (x - shadowLight.x) * t, dy: (y - shadowLight.y) * t };
+        }
+        // Re-centers the overhead light above whatever the current level's land actually spans -
+        // called once right after landHexList is rebuilt, before any tree/rock bakes its shadow
+        // vector off of it.
+        function recomputeShadowLight() {
+            if (!landHexList.length) { shadowLight.x = 0; shadowLight.y = 0; return; }
+            let sx = 0, sy = 0;
+            for (let t of landHexList) { sx += t.x; sy += t.y; }
+            shadowLight.x = sx / landHexList.length;
+            shadowLight.y = sy / landHexList.length;
+        }
         function isOnScreen(x, y, buffer) { 
             buffer = buffer || 50; 
             return x > camera.x - buffer && x < camera.x + canvas.width + buffer && y > camera.y - buffer && y < camera.y + canvas.height + buffer;
@@ -3859,6 +3906,7 @@
             for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
             buildIslandBridges();
             buildLandTileGrid();
+            recomputeShadowLight();
 
             goal.x = goalTile.x; goal.y = goalTile.y; goal.active = true;
             goalTile.element = { type: 'goal' };
@@ -3956,7 +4004,7 @@
                 if (roll < treeRockChance) {
                     let type = Math.random() > 0.6 ? 'rock' : 'tree';
                     tile.element = { type };
-                    trees.push({ x: tile.x, y: tile.y, radius: 25 + Math.random() * 20, type, variant: Math.floor(Math.random()*3), seed: Math.random()*1000 });
+                    trees.push(makeSceneryObject(tile.x, tile.y, 25 + Math.random() * 20, type, Math.floor(Math.random()*3), Math.random()*1000));
                 } else if (roll < treeRockChance + coinChance) {
                     let itype = rollItemType(scaledLevel);
                     tile.element = { type: 'coin' };
@@ -4152,6 +4200,7 @@
             landHexList = []; holeHexList = [];
             for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
             buildLandTileGrid();
+            recomputeShadowLight();
 
             if (!goalTile) goalTile = landHexList[0];
             goal.x = goalTile.x; goal.y = goalTile.y;
@@ -4188,7 +4237,7 @@
                 if (Math.random() < 0.16) {
                     let type = Math.random() > 0.6 ? 'rock' : 'tree';
                     tile.element = { type };
-                    trees.push({ x: tile.x, y: tile.y, radius: 25 + Math.random() * 20, type, variant: Math.floor(Math.random() * 3), seed: Math.random() * 1000 });
+                    trees.push(makeSceneryObject(tile.x, tile.y, 25 + Math.random() * 20, type, Math.floor(Math.random() * 3), Math.random() * 1000));
                 }
             }
             buildTreeGrid();
@@ -7917,6 +7966,34 @@
             }
         }
 
+        // Directional counterpart to drawGroundShadow, for static scenery (trees/rocks) whose
+        // {dx,dy} shadow vector was already baked once at level-generation time (see
+        // computeShadowVector/makeSceneryObject) rather than computed here. Draws a single
+        // ellipse stretched from the object's own ground-contact point (cx,cy) out to
+        // (cx+dx, cy+dy) - the far end of its shadow - so it reads as one shadow pointing away
+        // from the level's overhead light instead of a plain blob directly underneath. Falls
+        // back to a plain drawGroundShadow blob on the rare tile sitting almost exactly under
+        // the light, where dx/dy are close to zero.
+        function drawCastShadow(c, cx, cy, dx, dy, halfWidth) {
+            let len = Math.hypot(dx, dy);
+            if (len < 2) { drawGroundShadow(c, cx, cy, halfWidth * 2.2, halfWidth); return; }
+            let rx = len * 0.5 + halfWidth * 1.4;
+            c.save();
+            c.translate(cx + dx * 0.5, cy + dy * 0.5);
+            c.rotate(Math.atan2(dy, dx));
+            if (player.color === 'onebit') {
+                c.fillStyle = '#000000';
+                c.beginPath(); c.ellipse(0, 0, rx, halfWidth, 0, 0, Math.PI * 2); c.fill();
+                c.strokeStyle = '#ffffff'; c.lineWidth = 1.5;
+                c.beginPath(); c.ellipse(0, 0, rx, halfWidth, 0, 0, Math.PI * 2); c.stroke();
+            } else {
+                c.fillStyle = 'rgba(0,0,0,0.22)';
+                c.beginPath(); c.ellipse(0, 0, rx, halfWidth, 0, 0, Math.PI * 2); c.fill();
+            }
+            c.restore();
+        }
+
+
         // Mixes a hex color toward black (amt < 0) or white (amt > 0) by |amt| (0..1). Used to
         // fake soft directional shading (shadow/highlight passes) on the fishing-scene figures
         // and props below without needing per-shape gradients or clip paths.
@@ -8871,7 +8948,7 @@
                     let treeBaseColor = t.golden ? '#8a5a00' : t.onFire ? '#2b1a12' : t.wilted ? '#4a3a2a' : t.frozen ? '#4a6f8a' : currentTheme.treeBase;
                     let treeTopColor = t.golden ? goldGrad : t.onFire ? '#3d1f0a' : t.wilted ? '#5c6b3f' : t.frozen ? '#bfe9f7' : currentTheme.treeTop;
                     let treeAccentColor = t.golden ? '#fff7c2' : t.onFire ? '#ff6b1a' : t.wilted ? '#8a9a5f' : t.frozen ? '#e8f7fc' : (currentTheme.name === "Snow" ? "#fff" : "#388e3c");
-                    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(t.x, t.y + t.radius * 0.5, t.radius * 0.85, t.radius * 0.38, 0, 0, Math.PI*2); ctx.fill();
+                    drawCastShadow(ctx, t.x, t.y + t.radius * 0.5, t.shadowDX || 0, t.shadowDY || 0, t.radius * 0.38);
                     ctx.fillStyle = treeBaseColor; ctx.fillRect(t.x - t.radius*0.2, t.y - t.radius*0.1, t.radius*0.4, t.radius*0.9);
                     ctx.save(); ctx.translate(t.x, t.y - t.radius*0.1); ctx.rotate(sway); ctx.translate(-t.x, -(t.y - t.radius*0.1));
                     ctx.fillStyle = treeTopColor;
@@ -8967,7 +9044,7 @@
                     // usual theme art, all the time (see drawRainbowRock).
                     if (player.color === 'rainbow') { window.LegendaryStageEffects.rainbow.drawRainbowRock(ctx, r.x, r.y, r.radius, r.seed || 0); return; }
                     let variant = r.variant || 0;
-                    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(r.x, r.y + r.radius*0.18, r.radius*1.05, r.radius*0.4, 0, 0, Math.PI*2); ctx.fill();
+                    drawCastShadow(ctx, r.x, r.y + r.radius * 0.18, r.shadowDX || 0, r.shadowDY || 0, r.radius * 0.4);
                     if (r.golden) {
                         let rockGoldGrad = ctx.createLinearGradient(r.x - r.radius, r.y - r.radius, r.x + r.radius, r.y + r.radius);
                         rockGoldGrad.addColorStop(0, '#fff7c2'); rockGoldGrad.addColorStop(0.5, '#ffcc00'); rockGoldGrad.addColorStop(1, '#8a5a00');
