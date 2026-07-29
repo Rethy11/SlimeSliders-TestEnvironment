@@ -6072,11 +6072,27 @@
         // dismissed by a double tap (matching the trigger gesture); the "Swipe to change dash
         // direction!" tutorial is dismissed by a swipe instead (matching that gesture). ---
         let lionTapStartX = 0, lionTapStartY = 0, lionTapStartTime = 0, lionLastTapTime = 0;
+        let lionDragging = false, lionMoveX = 0, lionMoveY = 0;
         function lionTapStart(e) {
             const t = e.touches ? e.touches[0] : e;
             lionTapStartX = t.clientX; lionTapStartY = t.clientY; lionTapStartTime = Date.now();
+            lionMoveX = t.clientX; lionMoveY = t.clientY;
+            lionDragging = true;
+        }
+        // Live-updates the telegraph while the "Swipe to change dash direction!" tutorial has
+        // the game paused - handleMove above is gated to gameState === 'playing' so it goes
+        // silent during that pause, which otherwise left the telegraph only snapping to the
+        // swipe's direction on release instead of following the drag as it happens.
+        function lionTapMove(e) {
+            if (!lionDragging || lionTutorialPause !== 'aimhalf') return;
+            const t = e.touches ? e.touches[0] : e;
+            let dx = t.clientX - lionMoveX, dy = t.clientY - lionMoveY;
+            let dir = userSettings.invert ? -1 : 1;
+            if (Math.abs(dx) + Math.abs(dy) > 1) player.lionAimAngle = Math.atan2(dy * dir, dx * dir);
+            lionMoveX = t.clientX; lionMoveY = t.clientY;
         }
         function lionTapEnd(e) {
+            lionDragging = false;
             if (gameState !== 'playing' && !lionTutorialPause) return;
             if (e.target && e.target.closest && e.target.closest('button, .inv-item, .shop-tab, .toggle-btn, [onclick]')) return;
             const t = e.changedTouches ? e.changedTouches[0] : e;
@@ -6105,6 +6121,8 @@
         }
         window.addEventListener('mousedown', lionTapStart);
         window.addEventListener('touchstart', lionTapStart, { passive: true });
+        window.addEventListener('mousemove', lionTapMove);
+        window.addEventListener('touchmove', lionTapMove, { passive: true });
         window.addEventListener('mouseup', lionTapEnd);
         window.addEventListener('touchend', lionTapEnd);
 
