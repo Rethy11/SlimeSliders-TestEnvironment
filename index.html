@@ -1572,10 +1572,14 @@
         let bossItemsAwarded = {};
         let companions = [];
         let playerTrail = [];
-        // Mythic: Royal Jelly (King Slime) - periodically summoned homing slimes, each
-        // {x,y,radius,colorId,vx,vy}. Function exactly like Slime Squad companions (mutually
-        // destroy any enemy they touch, die to enemy projectiles) except they seek out the
-        // nearest enemy within ROYAL_JELLY_HOME_RANGE instead of following the player's trail.
+        // Mythic: Royal Jelly (King Slime) - periodically summoned patrol slimes, each
+        // {x,y,radius,colorId,vx,vy,spawnX,spawnY,patrolTargetX,patrolTargetY,patrolTimer}.
+        // Function exactly like Slime Squad companions (mutually destroy any enemy they touch,
+        // die to enemy projectiles) except they never follow the player - instead they wander
+        // within ROYAL_JELLY_PATROL_RADIUS of spawnX/spawnY (the nearest non-hazard tile to
+        // wherever they were actually summoned), picking a new safe patrol point at random and
+        // refusing to step into a hazard tile along the way. Any enemy within
+        // ROYAL_JELLY_SIGHT_RANGE breaks a slime off its patrol to go attack it instead.
         // Kept as its own array (rather than reusing `companions`) since these are transient
         // summons on a recurring timer, not a persistent stack tied to an owned item count.
         let royalJellySlimes = [];
@@ -2867,6 +2871,21 @@
             return !!tile && tile.type === 'land';
         }
 
+        // Finds the closest land-tile center to (x,y) - used to anchor things that must never
+        // sit over a hazard/hole (e.g. Royal Jelly's patrol slimes) to solid ground even when
+        // summoned from a spot that happens to be over a hazard. Falls back to (x,y) itself in
+        // the (extremely unlikely) case a level has no land tiles at all.
+        function nearestSafeTile(x, y) {
+            if (isSafe(x, y)) return { x, y };
+            let best = null, bestD = Infinity;
+            for (let i = 0; i < landHexList.length; i++) {
+                let t = landHexList[i];
+                let d = dist(x, y, t.x, t.y);
+                if (d < bestD) { bestD = d; best = t; }
+            }
+            return best ? { x: best.x, y: best.y } : { x, y };
+        }
+
         // Docks now double as safe ground: their deck juts out over a hazard hole (see
         // spawnHazardDocks), so standing on one shouldn't count as being over the hazard even
         // though the underlying tile is type 'hole'. DOCK_SCALE also drives drawDock()'s visual
@@ -2991,25 +3010,36 @@
         const LION_DASH_DISTANCE = 2.5 * HEX_TILE_DIST;
         const LION_DASH_FRAMES = 14;
         const LION_DASH_SPEED = LION_DASH_DISTANCE / LION_DASH_FRAMES;
-        // Royal Jelly (King Slime mythic item): how far a summoned slime will look for a
-        // target before giving up and just idling in place.
-        const ROYAL_JELLY_HOME_RANGE = 5 * HEX_TILE_DIST;
+        // Royal Jelly (King Slime mythic item): how far from its spawn point (the nearest
+        // non-hazard tile to wherever it was actually summoned) a patrol slime will wander.
+        const ROYAL_JELLY_PATROL_RADIUS = 3 * HEX_TILE_DIST;
+        // How far a patrol slime can "see" - any enemy within this range breaks it off its
+        // patrol to go attack, same as the mutual-destroy collision already does on contact.
+        const ROYAL_JELLY_SIGHT_RANGE = 2 * HEX_TILE_DIST;
 
         const mythicItemEngine = {
             mythic_kingslime: {
-                baseInterval: 480, tint: '#3fd67a',
+                baseInterval: 420, tint: '#3fd67a',
                 // Mimics King Slime's own Slime Split: summons two angry gacha slimes flanking
-                // the player (left/right of whichever way they're facing) that then home in on
-                // the nearest enemy within ROYAL_JELLY_HOME_RANGE and attack. Otherwise these
-                // function exactly like Slime Squad companions - see the royalJellySlimes
-                // movement/collision blocks in update() - just homing instead of trailing.
+                // the player (left/right of whichever way they're facing), every 7s at base.
+                // Each one's spawn point is snapped to the nearest non-hazard tile to wherever
+                // it actually popped in (see nearestSafeTile), and it then just patrols within
+                // ROYAL_JELLY_PATROL_RADIUS of that point - it never follows the player.
+                // Otherwise these function exactly like Slime Squad companions - see the
+                // royalJellySlimes movement/collision blocks in update().
                 proc: (count) => {
                     let facing = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
                     let sides = [facing - Math.PI / 2, facing + Math.PI / 2];
                     for (let side of sides) {
                         let sx = player.worldX + Math.cos(side) * (player.radius + 26);
                         let sy = player.worldY + Math.sin(side) * (player.radius + 26);
-                        royalJellySlimes.push({ x: sx, y: sy, prevX: sx, prevY: sy, radius: 16, colorId: 'red', vx: 0, vy: 0, isRoyalJelly: true });
+                        let anchor = nearestSafeTile(sx, sy);
+                        royalJellySlimes.push({
+                            x: anchor.x, y: anchor.y, prevX: anchor.x, prevY: anchor.y,
+                            radius: 16, colorId: 'red', vx: 0, vy: 0, isRoyalJelly: true,
+                            spawnX: anchor.x, spawnY: anchor.y,
+                            patrolTargetX: anchor.x, patrolTargetY: anchor.y, patrolTimer: 0
+                        });
                     }
                     playSFX('enemy_hit');
                 }
@@ -6384,19 +6414,51 @@
                     }
 
                     // Mythic: Royal Jelly's summoned slimes - unlike Slime Squad companions
-                    // (which trail the player), these home in on whichever enemy is nearest,
-                    // as long as one is within ROYAL_JELLY_HOME_RANGE. No target in range yet?
-                    // Just idle in place until one wanders close enough.
+                    // (which trail the player), these never follow the player at all. Each one
+                    // patrols within ROYAL_JELLY_PATROL_RADIUS of its own spawnX/spawnY (the
+                    // nearest non-hazard tile to wherever it was actually summoned), wandering
+                    // to a fresh random point nearby once it arrives or a patrol timer lapses -
+                    // unless an enemy wanders within ROYAL_JELLY_SIGHT_RANGE, in which case it
+                    // breaks off and beelines for the nearest one it can see instead (actually
+                    // killing it is still handled by the mutual-destroy collision check further
+                    // down; this just closes the distance). Any candidate patrol point that
+                    // lands on a hazard is rejected in favor of another attempt, and the
+                    // per-frame step itself - whether patrolling or chasing - is also validated
+                    // so the slime can never wander onto a hazard tile mid-transit; it falls
+                    // back toward its (always-safe) spawn point instead if that would happen.
                     if (royalJellySlimes.length > 0) {
                         for (let ji = 0; ji < royalJellySlimes.length; ji++) {
                             let js = royalJellySlimes[ji];
-                            let nearestE = null, nearestD = ROYAL_JELLY_HOME_RANGE;
+                            let nearestE = null, nearestD = ROYAL_JELLY_SIGHT_RANGE;
                             for (let ei = 0; ei < enemies.length; ei++) {
                                 let e = enemies[ei];
                                 let d = dist(js.x, js.y, e.x, e.y);
                                 if (d < nearestD) { nearestD = d; nearestE = e; }
                             }
-                            if (nearestE) { js.x += (nearestE.x - js.x) * 0.1; js.y += (nearestE.y - js.y) * 0.1; }
+                            let targetX, targetY, speed;
+                            if (nearestE) {
+                                targetX = nearestE.x; targetY = nearestE.y; speed = 0.09;
+                            } else {
+                                js.patrolTimer = (js.patrolTimer || 0) - 1;
+                                let atTarget = dist(js.x, js.y, js.patrolTargetX, js.patrolTargetY) < 6;
+                                if (atTarget || js.patrolTimer <= 0) {
+                                    let picked = false;
+                                    for (let attempts = 0; attempts < 12 && !picked; attempts++) {
+                                        let a = Math.random() * Math.PI * 2;
+                                        let r = Math.random() * ROYAL_JELLY_PATROL_RADIUS;
+                                        let tx = js.spawnX + Math.cos(a) * r;
+                                        let ty = js.spawnY + Math.sin(a) * r;
+                                        if (isSafe(tx, ty)) { js.patrolTargetX = tx; js.patrolTargetY = ty; picked = true; }
+                                    }
+                                    if (!picked) { js.patrolTargetX = js.spawnX; js.patrolTargetY = js.spawnY; }
+                                    js.patrolTimer = 90 + Math.random() * 60;
+                                }
+                                targetX = js.patrolTargetX; targetY = js.patrolTargetY; speed = 0.05;
+                            }
+                            let nx = js.x + (targetX - js.x) * speed;
+                            let ny = js.y + (targetY - js.y) * speed;
+                            if (isSafe(nx, ny)) { js.x = nx; js.y = ny; }
+                            else { js.patrolTargetX = js.spawnX; js.patrolTargetY = js.spawnY; }
                             js.vx = js.x - js.prevX;
                             js.vy = js.y - js.prevY;
                         }
