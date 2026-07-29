@@ -53,6 +53,13 @@
            blink, since this is a one-shot announcement rather than an ongoing status. */
         #survive-announcement { position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%) scale(0.6); display: none; opacity: 0; background: rgba(0, 0, 0, 0.75); color: #ff2e4d; padding: 18px 38px; border-radius: 16px; border: 3px solid #ff2e4d; font-size: 2rem; font-weight: bold; text-shadow: 0 0 10px #000; z-index: 15; pointer-events: none; text-align: center; transition: opacity 0.4s ease, transform 0.4s ease; }
         #survive-announcement.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        /* Sandstorm Mane (Lion mythic item) one-time dash tutorial popups - "Double tap to
+           dash!" the first time the ring ever fills, and "Swipe to change dash direction!"
+           the first time the aim window ever reaches its halfway point. Both pause game logic
+           (see lionTutorialPause) and are dismissed by double-tapping. */
+        #lion-tutorial-popup { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%) scale(0.6); display: none; opacity: 0; background: rgba(0,0,0,0.82); color: #ff3b52; padding: 18px 32px; border-radius: 16px; border: 3px solid #ff3b52; font-size: 1.3rem; font-weight: bold; text-shadow: 0 0 8px #000; z-index: 60; pointer-events: none; text-align: center; transition: opacity 0.3s ease, transform 0.3s ease; }
+        #lion-tutorial-popup.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        #lion-tutorial-popup .lion-tutorial-sub { display: block; font-size: 0.8rem; font-weight: normal; margin-top: 6px; opacity: 0.85; }
 
         /* Corrupted Data's color-invert filter now lives in themes/legendary-corrupted.css,
            and the 1-Bit page filter now lives in themes/legendary-onebit.css - see the
@@ -574,6 +581,7 @@
     <button id="settings-corner-btn" class="corner-icon"><img class="icon-img" id="settings-icon-img" style="width:1.6rem;height:1.6rem;" alt=""></button>
     <button id="almanac-corner-btn" class="corner-icon"><img class="icon-img" id="almanac-icon-img" style="width:1.6rem;height:1.6rem;" alt=""><span class="notif-dot" id="almanac-corner-dot"></span></button>
     <div id="unlock-popup"><img class="icon-img" id="unlock-star-l" style="width:1em;height:1em;" alt=""> <span id="unlock-popup-text">New Enemy Entry Unlocked!</span> <img class="icon-img" id="unlock-star-r" style="width:1em;height:1em;" alt=""></div>
+    <div id="lion-tutorial-popup"><span id="lion-tutorial-text"></span><span class="lion-tutorial-sub">Double tap to continue</span></div>
 
     <div id="shop-modal" class="modal">
         <div class="modal-header">
@@ -1365,7 +1373,8 @@
             jiggleForceX: 0, jiggleForceY: 0, activePowerup: null, powerupDuration: 0,
             powerupTimeLeft: 0, powerupTickTimer: 0, facing: 0, hazardTimer: 0, spikesTimer: 0,
             plasmaTimer: 0, invulnerableTimer: 0, wilkshirianTimer: 0, spectreBoostTimer: 0,
-            lionChargeTimer: 0, lionDashTimer: 0, lionDashAngle: 0
+            lionRingCharge: 0, lionAimTimer: 0, lionAimMax: 0, lionAimAngle: 0,
+            lionDashTimer: 0, lionDashAngle: 0
         };
         // Number of Devil Deal charges burned so far this run (see triggerGameOver) - tracked
         // separately from runItems.devildeal (remaining active charges) so the HUD can keep
@@ -1504,6 +1513,11 @@
         // Roguelite: Plasma Beam item - transient zap-line visuals, one per target hit, each
         // {x1,y1,x2,y2,life}. Purely cosmetic bookkeeping, faded out and removed in update().
         let plasmaBeamFX = [];
+        // Mythic: Sandstorm Mane (Lion) - which one-time dash tutorial (if any) currently has
+        // game logic paused: null, 'ringfull' ("Double tap to dash!") or 'aimhalf' ("Swipe to
+        // change dash direction!"). See handleLionDoubleTap/showLionTutorial and the ring-fill
+        // and aim-timer ticks in update().
+        let lionTutorialPause = null;
         // Ambient vignette: a man and boy sitting at the water's edge, fishing (see the spawn
         // logic in generateLevel and drawFishingScene below). At most one per level. Guaranteed
         // on level 1 no matter what theme/hazard is in play; a rare water-only treat on every
@@ -1589,7 +1603,7 @@
             mythic_kingslime: { id: 'mythic_kingslime', rarity: 'mythic', bossId: 'kingslime', name: 'Royal Jelly',
                 desc: 'Periodically splits off slime globs that seek out and pop enemies, mimicking King Slime\'s own Slime Split - and pulls in any loot they knock loose. Each stack fires more globs and more often.' },
             mythic_desertlion: { id: 'mythic_desertlion', rarity: 'mythic', bossId: 'desertlion', name: 'Sandstorm Mane',
-                desc: 'Periodically winds up, then unleashes an invincible Sand Pounce dash that kills every enemy in your path. Each stack winds up faster and dashes farther.' },
+                desc: 'Charges up a ring, then stays ready - double tap to plant yourself in place, swipe to aim, and unleash a short invincible Sand Pounce dash that kills every enemy in your path. Each stack charges the ring faster.' },
             mythic_yeti: { id: 'mythic_yeti', rarity: 'mythic', bossId: 'yeti', name: 'Frostbound Horn',
                 desc: 'Periodically unleashes the Yeti\'s own Frost Breath - a spray of many icicle shards toward wherever you\'re heading. Each stack fires more shards and more often.' },
             mythic_lavaworm: { id: 'mythic_lavaworm', rarity: 'mythic', bossId: 'lavaworm', name: 'Molten Core',
@@ -2910,13 +2924,18 @@
         // boss's own attack, plus one small utility effect beyond just damage. Ticked from a
         // per-id counter on `player.mythicTimers` (reset in resetGame's player fields reset).
         // ==========================================
-        // Lion mythic item (Sandstorm Mane) timing - wind-up length before the dash fires and
-        // how long the invincible dash itself lasts, both in frames. See mythicItemEngine's
-        // mythic_desertlion.proc (which only starts the wind-up) and the lionChargeTimer/
-        // lionDashTimer tick in the main update loop (which actually launches + drives it).
-        const LION_CHARGE_FRAMES = 36;
-        const LION_DASH_FRAMES = 22;
-        const LION_DASH_SPEED = 12;
+        // Lion mythic item (Sandstorm Mane) timing. Unlike the other mythic items this one
+        // isn't a recurring auto-fire proc: a ring around the player fills over
+        // LION_RING_CHARGE_TIME seconds (like Plasma Beam) and then just stays full/ready
+        // instead of firing on its own. Double-tapping while ready starts a short
+        // LION_AIM_FRAMES "hold in place and aim" window (player frozen, swipe to redirect),
+        // at the end of which a short, fixed-distance invincible dash fires. See
+        // handleLionDoubleTap/startLionAim and the ring/aim/dash ticks in update().
+        const LION_RING_CHARGE_TIME = 3;
+        const LION_AIM_FRAMES = 45;
+        const LION_DASH_DISTANCE = 2.5 * HEX_TILE_DIST;
+        const LION_DASH_FRAMES = 14;
+        const LION_DASH_SPEED = LION_DASH_DISTANCE / LION_DASH_FRAMES;
 
         const mythicItemEngine = {
             mythic_kingslime: {
@@ -2929,22 +2948,9 @@
                     playSFX('enemy_hit');
                 }
             },
-            mythic_desertlion: {
-                baseInterval: 440, tint: '#d9a441',
-                proc: (count) => {
-                    // Winds up an invincible Sand Pounce dash instead of firing instantly - see
-                    // the lionChargeTimer/lionDashTimer tick in the main update loop for the
-                    // actual wind-up glow, launch, and kill-on-touch, and drawBossGeneric-style
-                    // warning telegraph isn't needed here since it's drawn directly around the
-                    // player (see the charge-glow draw pass). Each stack winds up a bit faster
-                    // and dashes a bit farther, on top of the normal per-stack interval shrink.
-                    if (player.lionChargeTimer > 0 || player.lionDashTimer > 0) return;
-                    let chargeLen = Math.max(14, LION_CHARGE_FRAMES - (count - 1) * 3);
-                    player.lionChargeTimer = chargeLen; player.lionChargeMax = chargeLen;
-                    player.lionDashStacks = count;
-                    playSFX('bull_charge');
-                }
-            },
+            // mythic_desertlion (Sandstorm Mane) intentionally has no entry here - it's not a
+            // recurring auto-fire proc like the others. Its ring-charge/aim/dash logic is
+            // ticked directly in update() and triggered by handleLionDoubleTap().
             mythic_yeti: {
                 baseInterval: 480, tint: '#bfe8f5',
                 proc: (count) => {
@@ -3620,7 +3626,8 @@
             hexTiles = new Map(); landHexList = []; holeHexList = []; borderHexList = []; fences = [];
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.hazardTimer = 0; player.spikesTimer = 0;
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0;
-            player.lionChargeTimer = 0; player.lionDashTimer = 0;
+            player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0;
+            player.lionDashTimer = 0;
             safeGridCache.clear();
             goalUnreachable = false; goalSeen = false;
             levelCoinsCollected = 0; levelCoinsPossible = 0;
@@ -6022,10 +6029,17 @@
             const touch = e.touches ? e.touches[0] : e;
             let dx = touch.clientX - lastX; let dy = touch.clientY - lastY;
             let dir = userSettings.invert ? -1 : 1;
-            player.vx += dx * sensitivity * dir;
-            player.vy += dy * sensitivity * dir;
-            player.jiggleForceX = dx * sensitivity * dir;
-            player.jiggleForceY = dy * sensitivity * dir;
+            // Mythic: Sandstorm Mane (Lion) aim window - the player is held in place
+            // (lionAimTimer tick in update() pins vx/vy to 0), so swipes here redirect the
+            // charging dash's angle instead of moving the player.
+            if (player.lionAimTimer > 0) {
+                if (Math.abs(dx) + Math.abs(dy) > 1) player.lionAimAngle = Math.atan2(dy * dir, dx * dir);
+            } else {
+                player.vx += dx * sensitivity * dir;
+                player.vy += dy * sensitivity * dir;
+                player.jiggleForceX = dx * sensitivity * dir;
+                player.jiggleForceY = dy * sensitivity * dir;
+            }
             lastX = touch.clientX; lastY = touch.clientY; pointerScreenX = touch.clientX; pointerScreenY = touch.clientY;
         }
         function handleEnd() { isDragging = false;
@@ -6046,6 +6060,78 @@
             }
             lastTapTime = now;
         }, { passive: false, capture: true });
+
+        // --- Mythic: Sandstorm Mane (Lion) double-tap detection. Tracked independently of the
+        // drag-to-move handlers above so it still works while gameState is 'paused' for one of
+        // the lion's own one-time tutorial popups (normal movement/dragging requires 'playing',
+        // but dismissing those popups shouldn't). A "tap" is a short, low-movement press; two
+        // taps within 350ms of each other count as a double tap. ---
+        let lionTapStartX = 0, lionTapStartY = 0, lionTapStartTime = 0, lionLastTapTime = 0;
+        function lionTapStart(e) {
+            const t = e.touches ? e.touches[0] : e;
+            lionTapStartX = t.clientX; lionTapStartY = t.clientY; lionTapStartTime = Date.now();
+        }
+        function lionTapEnd(e) {
+            if (gameState !== 'playing' && !lionTutorialPause) return;
+            if (e.target && e.target.closest && e.target.closest('button, .inv-item, .shop-tab, .toggle-btn, [onclick]')) return;
+            const t = e.changedTouches ? e.changedTouches[0] : e;
+            let moved = Math.hypot(t.clientX - lionTapStartX, t.clientY - lionTapStartY);
+            let heldTime = Date.now() - lionTapStartTime;
+            if (moved > 16 || heldTime > 300) { lionLastTapTime = 0; return; }
+            let now = Date.now();
+            if (now - lionLastTapTime <= 350) {
+                lionLastTapTime = 0;
+                handleLionDoubleTap();
+            } else {
+                lionLastTapTime = now;
+            }
+        }
+        window.addEventListener('mousedown', lionTapStart);
+        window.addEventListener('touchstart', lionTapStart, { passive: true });
+        window.addEventListener('mouseup', lionTapEnd);
+        window.addEventListener('touchend', lionTapEnd);
+
+        // Starts the Sandstorm Mane aim window: player is frozen and defaults to facing their
+        // current heading, then can swipe (see handleMove) to redirect before the dash fires.
+        function startLionAim() {
+            player.lionAimMax = LION_AIM_FRAMES;
+            player.lionAimTimer = LION_AIM_FRAMES;
+            player.lionAimAngle = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
+            playSFX('bull_charge');
+        }
+
+        // Central double-tap handler: dismisses whichever lion tutorial popup is currently
+        // pausing the game (if any - dismissing the "Double tap to dash!" popup doubles as the
+        // triggering double-tap, so it also starts the aim window), otherwise triggers the dash
+        // normally once the ring is full and nothing else lion-related is already in progress.
+        function handleLionDoubleTap() {
+            if (lionTutorialPause) {
+                let which = lionTutorialPause;
+                lionTutorialPause = null;
+                hideLionTutorial();
+                if (gameState === 'paused') gameState = previousState || 'playing';
+                if (which === 'ringfull') { storage.set('lionRingTutorialSeen', 'true'); startLionAim(); }
+                else if (which === 'aimhalf') { storage.set('lionAimTutorialSeen', 'true'); }
+                return;
+            }
+            if (gameState !== 'playing') return;
+            if ((runItems.mythic_desertlion || 0) <= 0) return;
+            if (player.lionAimTimer > 0 || player.lionDashTimer > 0) return;
+            if ((player.lionRingCharge || 0) < LION_RING_CHARGE_TIME) return;
+            startLionAim();
+        }
+
+        function showLionTutorial(text) {
+            let el = document.getElementById('lion-tutorial-popup');
+            document.getElementById('lion-tutorial-text').textContent = text;
+            el.style.display = 'block';
+            requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+        }
+        function hideLionTutorial() {
+            let el = document.getElementById('lion-tutorial-popup');
+            el.classList.remove('show');
+            setTimeout(() => { if (!el.classList.contains('show')) el.style.display = 'none'; }, 300);
+        }
 
         // SECTION 7 - GAME LOGIC & PHYSICS
         // Central update loop, physics calculations, AI, and collision.
@@ -6166,18 +6252,51 @@
                     // --- Mythic boss items: recurring attack-mimic procs (see updateMythicItems) ---
                     updateMythicItems();
 
-                    // --- Mythic: Sandstorm Mane (Lion) charge-dash. mythicItemEngine's
-                    // mythic_desertlion.proc only starts the wind-up (lionChargeTimer); once it
-                    // elapses this locks in a direction and launches an invincible dash
-                    // (lionDashTimer) that kills/damages anything it touches. Ticked every frame
-                    // regardless of proc timing, same convention as every other player timer here. ---
-                    if (player.lionChargeTimer > 0) {
-                        player.lionChargeTimer--;
-                        if (player.lionChargeTimer <= 0) {
-                            let dashAngle = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
-                            player.lionDashAngle = dashAngle;
-                            player.lionDashTimer = LION_DASH_FRAMES + (player.lionDashStacks || 1) * 2;
-                            player.invulnerableTimer = Math.max(player.invulnerableTimer || 0, (player.lionDashTimer / 60) + 0.15);
+                    // --- Mythic: Sandstorm Mane (Lion) - ring charges like Plasma Beam but,
+                    // unlike Plasma Beam, stays full/ready once charged instead of auto-firing.
+                    // handleLionDoubleTap() (bound to the window tap listeners further down)
+                    // is what actually starts the aim window once the ring is full. Charge
+                    // speed scales with stacks; dash distance stays fixed regardless of stacks
+                    // per the item's own short, punchy design. ---
+                    let lionStacks = runItems.mythic_desertlion || 0;
+                    if (lionStacks > 0 && player.lionAimTimer <= 0 && player.lionDashTimer <= 0) {
+                        if ((player.lionRingCharge || 0) < LION_RING_CHARGE_TIME) {
+                            let ringChargeTime = Math.max(1.2, LION_RING_CHARGE_TIME - (lionStacks - 1) * 0.4);
+                            player.lionRingCharge = (player.lionRingCharge || 0) + (1/60) * (LION_RING_CHARGE_TIME / ringChargeTime);
+                            if (player.lionRingCharge >= LION_RING_CHARGE_TIME) {
+                                player.lionRingCharge = LION_RING_CHARGE_TIME;
+                                // First time ever the ring fills: freeze game logic and teach
+                                // the double-tap-to-dash gesture. Dismissing it (see
+                                // handleLionDoubleTap) doubles as the triggering double-tap.
+                                if (!lionTutorialPause && storage.get('lionRingTutorialSeen') !== 'true') {
+                                    lionTutorialPause = 'ringfull';
+                                    showLionTutorial('Double tap to dash!');
+                                    previousState = gameState; gameState = 'paused';
+                                }
+                            }
+                        }
+                    }
+                    // Aim window: player is held in place (vx/vy pinned to 0 below) and can
+                    // swipe (see handleMove) to redirect lionAimAngle before the dash launches.
+                    if (player.lionAimTimer > 0) {
+                        let wasHalf = (1 - player.lionAimTimer / (player.lionAimMax || 1)) >= 0.5;
+                        player.lionAimTimer--;
+                        player.vx = 0; player.vy = 0;
+                        let nowHalf = (1 - player.lionAimTimer / (player.lionAimMax || 1)) >= 0.5;
+                        // First time ever the aim window reaches its halfway point: freeze game
+                        // logic and teach the swipe-to-redirect gesture. lionAimTimer is simply
+                        // left sitting at its current (halfway) value while paused, then resumes
+                        // counting down from there once dismissed.
+                        if (!wasHalf && nowHalf && !lionTutorialPause && storage.get('lionAimTutorialSeen') !== 'true') {
+                            lionTutorialPause = 'aimhalf';
+                            showLionTutorial('Swipe to change dash direction!');
+                            previousState = gameState; gameState = 'paused';
+                        }
+                        if (player.lionAimTimer <= 0) {
+                            player.lionDashAngle = player.lionAimAngle;
+                            player.lionDashTimer = LION_DASH_FRAMES;
+                            player.lionRingCharge = 0;
+                            player.invulnerableTimer = Math.max(player.invulnerableTimer || 0, (LION_DASH_FRAMES / 60) + 0.15);
                             screenShake = Math.max(screenShake, 8);
                             playSFX('bull_charge');
                         }
@@ -8912,19 +9031,41 @@
                         ctx.fillStyle = '#fff6d0'; ctx.beginPath(); ctx.arc(0, 0, p.radius + 10 + shieldPulse, 0, Math.PI*2); ctx.fill();
                         ctx.restore();
                     }
-                    // Mythic: Sandstorm Mane (Lion) wind-up - a tightening, brightening ring so
-                    // the charge-up telegraphs clearly before the invincible dash actually fires
-                    // (the dash itself reuses the Wilkshirian shield aura above via
-                    // isPlayerInvulnerable, rather than needing its own separate effect).
-                    if (p.lionChargeTimer > 0) {
+                    // Mythic: Sandstorm Mane (Lion) - a red ring (drawn a bit further out than
+                    // Plasma Beam's pink one so the two never overlap) fills as the dash
+                    // charges, then stays full/pulsing once ready instead of draining on its
+                    // own - double-tapping is what actually spends it (see
+                    // handleLionDoubleTap). While the aim window is active, a rectangle
+                    // telegraphs the exact dash path and hitbox width, fading in from
+                    // transparent to solid red as the hold-in-place moment runs out.
+                    let lionStacksDraw = runItems.mythic_desertlion || 0;
+                    if (lionStacksDraw > 0 && p.lionAimTimer <= 0 && p.lionDashTimer <= 0) {
+                        let lionChargeT = Math.min(1, (p.lionRingCharge || 0) / LION_RING_CHARGE_TIME);
                         ctx.save();
                         ctx.translate(pdrawX, pdrawY);
-                        let progress = 1 - (p.lionChargeTimer / (p.lionChargeMax || 1));
-                        let ringR = p.radius + 34 - progress * 18;
-                        let pulse = Math.sin(Date.now()/45) * 4;
-                        ctx.globalAlpha = 0.35 + 0.45 * progress;
-                        ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 3 + progress * 3;
-                        ctx.beginPath(); ctx.arc(0, 0, ringR + pulse, 0, Math.PI*2); ctx.stroke();
+                        ctx.strokeStyle = 'rgba(255, 30, 60, 0.3)'; ctx.lineWidth = 3;
+                        ctx.beginPath(); ctx.arc(0, 0, p.radius + 24, 0, Math.PI*2); ctx.stroke();
+                        ctx.strokeStyle = '#ff1e3c'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+                        ctx.beginPath(); ctx.arc(0, 0, p.radius + 24, -Math.PI/2, -Math.PI/2 + lionChargeT * Math.PI * 2); ctx.stroke();
+                        if (lionChargeT >= 1) {
+                            ctx.globalAlpha = 0.5 + 0.5 * Math.sin(Date.now() / 150);
+                            ctx.lineWidth = 5;
+                            ctx.beginPath(); ctx.arc(0, 0, p.radius + 24, 0, Math.PI*2); ctx.stroke();
+                        }
+                        ctx.restore();
+                    }
+                    if (p.lionAimTimer > 0) {
+                        let aimProgress = 1 - (p.lionAimTimer / (p.lionAimMax || 1));
+                        let hw = p.radius;
+                        ctx.save();
+                        ctx.translate(pdrawX, pdrawY);
+                        ctx.rotate(p.lionAimAngle || 0);
+                        ctx.globalAlpha = aimProgress * 0.65;
+                        ctx.fillStyle = '#ff1e3c';
+                        ctx.fillRect(0, -hw, LION_DASH_DISTANCE, hw * 2);
+                        ctx.globalAlpha = Math.min(1, aimProgress + 0.3);
+                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+                        ctx.strokeRect(0, -hw, LION_DASH_DISTANCE, hw * 2);
                         ctx.restore();
                     }
                     if (p.activePowerup === 'lightning') {
@@ -9103,7 +9244,9 @@
             splashes = []; leaves = []; screenShake = 0; hives = [];
             runItems = {}; bossItemsAwarded = {}; companions = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0; player.spectreBoostTimer = 0; player.mythicTimers = {};
-            player.lionChargeTimer = 0; player.lionDashTimer = 0;
+            player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0;
+            player.lionDashTimer = 0;
+            if (lionTutorialPause) { lionTutorialPause = null; let ltp = document.getElementById('lion-tutorial-popup'); if (ltp) { ltp.classList.remove('show'); ltp.style.display = 'none'; } }
             devilDealUsed = 0;
             iceFrostedTiles.clear();
             lavaScorchedTiles.clear(); fairyBloomTiles.clear(); goldenTiles.clear(); goldenHazardTiles.clear(); acidTrail = [];
