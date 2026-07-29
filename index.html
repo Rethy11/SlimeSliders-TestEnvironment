@@ -1073,7 +1073,7 @@
         // from the light.
         function makeSceneryObject(x, y, radius, type, variant, seed) {
             let objHeight = radius * (type === 'tree' ? 1.8 : 0.55);
-            let sv = computeShadowVector(x, y, objHeight);
+            let sv = computeShadowVector(objHeight);
             return { x, y, radius, type, variant, seed, shadowDX: sv.dx, shadowDY: sv.dy };
         }
 
@@ -2557,54 +2557,72 @@
         // ==========================================
         function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 
-        // ---- Ambient lighting: a single imaginary light source hovering above the whole
-        // level, used to cast directional shadows off static scenery (trees/rocks) instead of
-        // the flat "always straight down" blob every other shadow in this file uses. The
-        // light's ground position is recomputed once per level (see the shadowLight.x/y
-        // assignment right after landHexList is finalized in generateLevel/generateSurvivalLevel)
-        // to sit above the map's actual centroid, so shadows radiate outward from the middle of
-        // the board and get longer the closer an object sits to the map's edge - exactly what a
-        // lamp hanging over the whole level would produce. SHADOW_LIGHT_HEIGHT is in the same
-        // world units as x/y; keeping it well above any object's own height (trees/rocks are
-        // always under ~90 units tall) is what keeps shadows short near the light and merely
-        // long - never comically infinite - out at the map's fringes.
-        const SHADOW_LIGHT_HEIGHT = 1400;
-        let shadowLight = { x: 0, y: 0 };
-        // Bakes one occluder's shadow: a single ray from the light, through the top of the
-        // object, down to where it crosses the ground plane (z=0) - the literal "ray trace"
-        // this is named for, just solved analytically via similar triangles instead of marched
-        // step by step, so it costs one sqrt-free divide per occluder. Called once per tree/rock
-        // at level-generation time and the result (a fixed {dx,dy} offset from the object's own
-        // base to its shadow's tip) is cached on the object, so draw() never recomputes it - it
-        // just offsets an ellipse by an already-known vector every frame.
-        function computeShadowVector(x, y, objHeight) {
-            let h = Math.min(objHeight, SHADOW_LIGHT_HEIGHT - 40); // keep the light strictly above the object
-            let t = h / (SHADOW_LIGHT_HEIGHT - h); // similar-triangles factor from the height ratio
-            return { dx: (x - shadowLight.x) * t, dy: (y - shadowLight.y) * t };
+        // ---- Ambient lighting: models the level's single light as a directional "sun" rather
+        // than a point hovering somewhere over the map. A point light's shadow length depends on
+        // how far the occluder sits from that point - which is exactly what made shadows balloon
+        // into long, near-invisible slivers for anything far from the light once the light was
+        // moved off the map's centroid (see recomputeShadowLight below for why it moved). A
+        // directional light has no "distance from the light" term at all: every object's shadow
+        // length depends only on that object's own baked height, so it stays in sane proportion
+        // to the thing casting it no matter where it sits on the map, while every shadow still
+        // leans the same consistent way across the whole level.
+        const SHADOW_LENGTH_FACTOR = 1.15; // world units of shadow length per world unit of object height
+        let shadowDir = { x: 0, y: -1 }; // unit vector shadows point along; randomized once per level below
+        // Bakes one occluder's shadow vector - the direction shadows point, scaled by this
+        // particular object's own height. Called once per tree/rock/fence at level-generation
+        // time and the result (a fixed {dx,dy} offset from the object's own base to its shadow's
+        // farthest point) is cached on the object, so draw() never recomputes it - it just slides
+        // its own silhouette outline along an already-known vector every frame (see
+        // projectSilhouetteShadow).
+        function computeShadowVector(objHeight) {
+            let len = objHeight * SHADOW_LENGTH_FACTOR;
+            return { dx: shadowDir.x * len, dy: shadowDir.y * len };
         }
-        // Places the overhead light for whatever the current level's land actually spans -
-        // called once right after landHexList is rebuilt, before any tree/rock bakes its shadow
-        // vector off of it. Previously this parked the light directly above the map's centroid,
-        // which made every shadow radiate outward from dead center (a "lamp hanging over the
-        // middle of the room" look). Real sunlight doesn't sit over the room it's lighting - it
-        // comes from far off to one side, so instead this offsets the light from the centroid,
-        // out past the map's own edge, in a direction randomized once per level. The result is
-        // shadows that mostly point one consistent way across the whole level (like a low sun)
-        // rather than fanning out from the middle.
+        // Picks the level's shadow direction - called once right after landHexList is rebuilt,
+        // before any tree/rock/fence bakes its shadow vector off of it. Randomized per level so
+        // every map doesn't cast shadows the same way, but held constant for the whole level once
+        // picked, same as a real sun's angle would be for the duration of one day.
         function recomputeShadowLight() {
-            if (!landHexList.length) { shadowLight.x = 0; shadowLight.y = 0; return; }
-            let sx = 0, sy = 0;
-            for (let t of landHexList) { sx += t.x; sy += t.y; }
-            let cx = sx / landHexList.length, cy = sy / landHexList.length;
-            // How far the land itself reaches from its centroid, so the light can be placed a
-            // consistent distance clear of the map's actual edge rather than an arbitrary fixed
-            // offset that might sit inside a very large level or absurdly far outside a small one.
-            let maxR = 0;
-            for (let t of landHexList) { let dr = dist(cx, cy, t.x, t.y); if (dr > maxR) maxR = dr; }
             let angle = Math.random() * Math.PI * 2;
-            let lightDist = maxR * 1.6 + 300;
-            shadowLight.x = cx + Math.cos(angle) * lightDist;
-            shadowLight.y = cy + Math.sin(angle) * lightDist;
+            shadowDir = { x: Math.cos(angle), y: Math.sin(angle) };
+        }
+        // Looks up the hex tile (if any) under a world point - undefined means the point is
+        // outside the level's footprint entirely (the sky/void beyond the map's edge), as
+        // opposed to a tile that exists but is type 'hole' (an in-bounds hazard pit). Shadows use
+        // this distinction to stop at the map's edge instead of visibly hanging out over the sky,
+        // while still being allowed to fall across an in-bounds hazard (just more faintly - see
+        // groundShadowOpacityAt below).
+        function hexTileAt(x, y) {
+            let h = pixelToAxial(x, y);
+            return hexTiles.get(hexKey(h.q, h.r));
+        }
+        // How much of a shadow's normal opacity should show at a given world point: full over
+        // ordinary land, faint over an in-bounds hazard hole (still "there", just harder to make
+        // out against the hazard itself), and none at all once a point would fall on the sky
+        // beyond the map (that case is actually handled by shrinking the shadow's length before
+        // it ever gets this far - see clampShadowFraction - this just covers a point that's
+        // exactly on the boundary).
+        function groundShadowOpacityAt(x, y) {
+            let tile = hexTileAt(x, y);
+            if (!tile) return 0;
+            return tile.type === 'hole' ? 0.5 : 1;
+        }
+        // Finds the largest fraction (0-1) of the way from (baseX,baseY) to
+        // (baseX+dx,baseY+dy) that still lands on some part of the level's hex footprint (land
+        // or hazard hole - anything the map actually renders), so a shadow that would otherwise
+        // stretch past the map's edge gets shortened to stop right at that edge instead of
+        // visibly hanging out over the sky beyond it. A handful of hex lookups (binary search) is
+        // cheap enough since shadows are now always short relative to their own object (see
+        // SHADOW_LENGTH_FACTOR above), so this only ever trims the rare shadow near the map's
+        // actual boundary.
+        function clampShadowFraction(baseX, baseY, dx, dy) {
+            if (hexTileAt(baseX + dx, baseY + dy)) return 1;
+            let lo = 0, hi = 1;
+            for (let i = 0; i < 6; i++) {
+                let mid = (lo + hi) / 2;
+                if (hexTileAt(baseX + dx * mid, baseY + dy * mid)) lo = mid; else hi = mid;
+            }
+            return lo;
         }
         function isOnScreen(x, y, buffer) { 
             buffer = buffer || 50; 
@@ -3757,7 +3775,7 @@
                     let d = HEX_DIRS[dirIdx];
                     let [p1, p2] = hexEdgeCorners(tile, d.q, d.r);
                     let fmidX = (p1.x+p2.x)/2, fmidY = (p1.y+p2.y)/2;
-                    let fsv = computeShadowVector(fmidX, fmidY, 22);
+                    let fsv = computeShadowVector(22);
                     fences.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, midX: fmidX, midY: fmidY, shadowDX: fsv.dx, shadowDY: fsv.dy });
                 }
             }
@@ -4306,7 +4324,7 @@
                     let d = HEX_DIRS[dirIdx];
                     let [p1, p2] = hexEdgeCorners(tile, d.q, d.r);
                     let fmidX = (p1.x+p2.x)/2, fmidY = (p1.y+p2.y)/2;
-                    let fsv = computeShadowVector(fmidX, fmidY, 22);
+                    let fsv = computeShadowVector(22);
                     fences.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, midX: fmidX, midY: fmidY, shadowDX: fsv.dx, shadowDY: fsv.dy });
                 }
             }
@@ -7984,103 +8002,158 @@
             }
         }
 
-        // Fills a shadow polygon whose points are already in world space (post-projection).
-        // Shared by every silhouette shadow below, same 1-Bit double-tone handling
-        // drawGroundShadow uses (an opaque black fill plus a white ring, since translucent
-        // black barely reads against that mode's own black checker tiles).
-        function fillShadowPolygon(c, pts) {
+        // Fills one or more shadow "rings" (closed point loops), all in world space
+        // (post-projection), as a single path/fill so overlapping rings (e.g. a tree's trunk and
+        // canopy shadows) don't double-darken where they overlap - one fill() call paints their
+        // union at one flat opacity no matter how many rings it contains. opacityMul scales the
+        // usual shadow darkness down further (used for shadows falling across an in-bounds
+        // hazard, so they still read as "there" without fully blacking out the hazard tile
+        // underneath). A slight blur on every shadow fill gives their outer edge a soft, fuzzy
+        // look rather than a hard cutout line.
+        function fillShadowPolygon(c, rings, opacityMul) {
+            if (opacityMul === undefined) opacityMul = 1;
+            if (opacityMul <= 0) return;
+            c.save();
+            c.filter = 'blur(2px)';
             c.beginPath();
-            c.moveTo(pts[0].x, pts[0].y);
-            for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
-            c.closePath();
+            for (let ring of rings) {
+                if (!ring.length) continue;
+                c.moveTo(ring[0].x, ring[0].y);
+                for (let i = 1; i < ring.length; i++) c.lineTo(ring[i].x, ring[i].y);
+                c.closePath();
+            }
             if (player.color === 'onebit') {
+                c.globalAlpha = opacityMul;
                 c.fillStyle = '#000000'; c.fill();
                 c.strokeStyle = '#ffffff'; c.lineWidth = 1.5; c.stroke();
             } else {
-                c.fillStyle = 'rgba(0,0,0,0.22)'; c.fill();
+                c.fillStyle = `rgba(0,0,0,${0.22 * opacityMul})`; c.fill();
             }
+            c.restore();
         }
 
         // Builds a small circle-approximating fan of points, used by the round-canopy tree
-        // outlines below.
+        // outlines below. Points are generated in one consistent angular sweep, so the ring is
+        // always a simple (non-self-crossing) loop on its own.
         function shadowCirclePoints(cx, cy, rad, n) {
             let out = [];
             for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; out.push({ x: cx + Math.cos(a) * rad, y: cy + Math.sin(a) * rad }); }
             return out;
         }
 
-        // Directional shadow for static scenery (trees/rocks/fences) whose {dx,dy} shadow
-        // vector was already baked once at level-generation time (see
-        // computeShadowVector/makeSceneryObject). Rather than substituting a generic ellipse
-        // sized off the object's (intentionally smaller, differently-shaped) collision circle,
-        // this projects the object's own outline - passed in as local points relative to its
-        // own ground-contact point, each tagged with how high off the ground it sits - into an
-        // actual cast silhouette: every point keeps its own horizontal spread, but slides along
-        // the baked shadow vector in proportion to its own height (so a treetop point travels
-        // the full baked distance while a trunk-base point barely moves), and is flattened onto
-        // the ground rather than adding extra vertical thickness of its own. A point's height
+        // Directional shadow for static scenery (trees/rocks) whose {dx,dy} shadow vector was
+        // already baked once at level-generation time (see computeShadowVector/
+        // makeSceneryObject). Rather than substituting a generic ellipse sized off the object's
+        // (intentionally smaller, differently-shaped) collision circle, this projects the
+        // object's own outline - passed in as one or more local "parts" (each its own simple
+        // polygon relative to the object's own ground-contact point) - into an actual cast
+        // silhouette: every point keeps its own horizontal spread, but slides along the baked
+        // shadow vector in proportion to its own height (so a treetop point travels the full
+        // baked distance while a trunk-base point barely moves), and is flattened onto the
+        // ground rather than adding extra vertical thickness of its own. A point's height
         // fraction is derived from its local y (how far above the object's own base it is)
-        // divided by maxUp, the local y of the outline's own highest point - so this works for
-        // any silhouette without needing per-point authoring of height fractions. A small sliver
-        // (20%) of each point's own local y is kept in the flattened result purely so the
-        // silhouette still reads as a shape (rather than collapsing to a thin wedge) when the
-        // shadow vector is very short, i.e. objects sitting almost directly under the light.
+        // divided by that part's own maxUp - so this works for any silhouette without needing
+        // per-point authoring of height fractions. Keeping the tree's trunk and canopy as
+        // separate parts (rather than one combined ring) matters here: concatenated into a
+        // single loop they'd cross over each other once their points started sliding by
+        // different amounts, which is what made shadows look detached from the tree casting
+        // them. Also shortens the whole shadow (via clampShadowFraction) if it would otherwise
+        // cross off the map into the sky, and fades it if it lands on an in-bounds hazard.
         function projectSilhouetteShadow(c, baseX, baseY, outline, dx, dy) {
-            let maxUp = outline.maxUp || 1;
-            let pts = outline.pts.map(p => {
-                let h = Math.max(0, Math.min(1, -p.y / maxUp));
-                return { x: baseX + p.x + dx * h, y: baseY + p.y * 0.2 + dy * h };
+            let safeFrac = clampShadowFraction(baseX, baseY, dx, dy);
+            let opacity = groundShadowOpacityAt(baseX + dx * safeFrac, baseY + dy * safeFrac);
+            if (opacity <= 0) return;
+            let rings = outline.parts.map(part => {
+                let maxUp = part.maxUp || 1;
+                return part.pts.map(p => {
+                    let h = Math.min(safeFrac, Math.max(0, Math.min(1, -p.y / maxUp)));
+                    return { x: baseX + p.x + dx * h, y: baseY + p.y * 0.2 + dy * h };
+                });
             });
-            fillShadowPolygon(c, pts);
+            fillShadowPolygon(c, rings, opacity);
         }
 
-        // Local (relative to the tree's own x,y) outline points for each tree look this game
-        // draws, mirroring the actual canopy/trunk shapes in the tree render block below instead
-        // of a stand-in collision circle. maxUp is the local y (negated, since up is negative y)
-        // of the outline's tallest point, used by projectSilhouetteShadow to work out how far
-        // along the shadow vector each point should slide.
+        // Local (relative to the tree's own x,y) outline for each tree look this game draws,
+        // mirroring the actual canopy/trunk shapes in the tree render block below instead of a
+        // stand-in collision circle. Returned as separate trunk/canopy parts (see
+        // projectSilhouetteShadow above for why they can't be one combined ring). maxUp on each
+        // part is the local y (negated, since up is negative y) of that part's own highest
+        // point.
         function getTreeShadowOutline(t) {
             let r = t.radius;
             let variant = t.variant || 0;
             let desertLike = currentTheme.name === 'Desert' || currentTheme.name === 'Volcano';
-            // Trunk base, common to every tree look.
-            let pts = [{ x: -r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: r * 0.8 }, { x: -r * 0.2, y: r * 0.8 }];
-            let maxUp = r * 0.1;
+            let trunk = { pts: [{ x: -r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: -r * 0.1 }, { x: r * 0.2, y: r * 0.8 }, { x: -r * 0.2, y: r * 0.8 }], maxUp: r * 0.1 };
+            let canopy;
             if (desertLike) {
-                if (variant === 1) { maxUp = r * 0.95; pts = pts.concat(shadowCirclePoints(0, -r * 0.3, r * 0.65, 6)); }
-                else if (variant === 2) { maxUp = r * 1.5; pts = pts.concat([{ x: -r * 0.3, y: -r }, { x: r * 0.3, y: -r }, { x: r * 0.3, y: r * 0.5 }, { x: -r * 0.3, y: r * 0.5 }]); }
-                else { maxUp = r * 1.5; pts = pts.concat([{ x: -r * 0.4, y: -r }, { x: r * 0.4, y: -r }, { x: r * 0.4, y: r * 0.5 }, { x: -r * 0.4, y: r * 0.5 }]); }
+                if (variant === 1) canopy = { pts: shadowCirclePoints(0, -r * 0.3, r * 0.65, 6), maxUp: r * 0.95 };
+                else if (variant === 2) canopy = { pts: [{ x: -r * 0.3, y: r * 0.5 }, { x: r * 0.3, y: r * 0.5 }, { x: r * 0.3, y: -r }, { x: -r * 0.3, y: -r }], maxUp: r * 1.5 };
+                else canopy = { pts: [{ x: -r * 0.4, y: r * 0.5 }, { x: r * 0.4, y: r * 0.5 }, { x: r * 0.4, y: -r }, { x: -r * 0.4, y: -r }], maxUp: r * 1.5 };
             } else {
-                if (variant === 1) { maxUp = r * 1.45; pts = pts.concat(shadowCirclePoints(0, -r * 0.55, r * 0.9, 8)); }
-                else if (variant === 2) { maxUp = r * 1.6; pts = pts.concat([{ x: 0, y: -r * 1.6 }, { x: r * 0.6, y: r * 0.4 }, { x: -r * 0.6, y: r * 0.4 }]); }
-                else { maxUp = r * 1.5; pts = pts.concat([{ x: 0, y: -r * 1.5 }, { x: r, y: r * 0.5 }, { x: -r, y: r * 0.5 }]); }
+                if (variant === 1) canopy = { pts: shadowCirclePoints(0, -r * 0.55, r * 0.9, 8), maxUp: r * 1.45 };
+                else if (variant === 2) canopy = { pts: [{ x: -r * 0.6, y: r * 0.4 }, { x: 0, y: -r * 1.6 }, { x: r * 0.6, y: r * 0.4 }], maxUp: r * 1.6 };
+                else canopy = { pts: [{ x: -r, y: r * 0.5 }, { x: 0, y: -r * 1.5 }, { x: r, y: r * 0.5 }], maxUp: r * 1.5 };
             }
-            return { pts, maxUp };
+            return { parts: [trunk, canopy] };
         }
 
         // Local (relative to the rock's own x,y) outline for rocks - all three variants drawn
         // below are short, wide, half-dome-like shapes, so one shared footprint (wider and much
-        // flatter than the collision circle) stands in for all of them.
+        // flatter than the collision circle) stands in for all of them. A single part is enough
+        // since a rock has no separate "trunk" the way a tree does.
         function getRockShadowOutline(r) {
             let rad = r.radius;
             return {
-                pts: [{ x: -rad, y: rad * 0.05 }, { x: -rad * 0.6, y: -rad * 0.55 }, { x: 0, y: -rad * 0.75 }, { x: rad * 0.6, y: -rad * 0.55 }, { x: rad, y: rad * 0.05 }, { x: rad * 0.85, y: rad * 0.18 }, { x: -rad * 0.85, y: rad * 0.18 }],
-                maxUp: rad * 0.75
+                parts: [{
+                    pts: [{ x: -rad, y: rad * 0.05 }, { x: -rad * 0.85, y: rad * 0.18 }, { x: rad * 0.85, y: rad * 0.18 }, { x: rad, y: rad * 0.05 }, { x: rad * 0.6, y: -rad * 0.55 }, { x: 0, y: -rad * 0.75 }, { x: -rad * 0.6, y: -rad * 0.55 }],
+                    maxUp: rad * 0.75
+                }]
             };
         }
 
-        // Fence shadow: a straight low wall, so its silhouette is just its own two ground
-        // endpoints plus those same two points raised to the fence's baked height - no need for
-        // a generic outline/height-fraction split since the whole rail sits at one height.
-        // f.shadowDX/DY is the baked vector for a point at that full rail height (see
-        // buildFences()/buildSurvivalFences()), so the raised points just add it directly.
+        // Fence shadow: a post-and-rail structure with real gaps in it (see the fence render
+        // block below), so its shadow is cast as those same separate pieces - two end posts plus
+        // two thin rails - rather than one solid rectangle that would block the whole span.
+        // Each piece's own corners carry their own height (v, negative up from the rail's ground
+        // line), so a post's shadow stretches further than a rail's the same way a tree's canopy
+        // stretches further than its trunk. u/v are in the fence's own rotated local space (u
+        // along its length, v perpendicular) and are rotated into world space before the shadow
+        // vector (already in world space) is added.
+        // Reused scratch canvas for the tree-shadow-vs-neighboring-tree punch-out in the shadow
+        // post-pass below (draw()). A tree's shadow is allowed to overlap everything else, but
+        // not another tree, so when one is nearby its silhouette needs to be erased back out of
+        // the shadow via destination-out compositing - doing that directly on the main canvas
+        // would also erase whatever else (player, rock, ...) happens to already be drawn under
+        // that same neighboring tree, so it's done on this small buffer (recentered on the
+        // casting tree every time it's used) and composited back with a single drawImage
+        // instead. 300x300 comfortably covers the longest possible shadow (bounded by
+        // SHADOW_LENGTH_FACTOR) plus a tree's own canopy width, with room to spare.
+        const treeShadowBuf = document.createElement('canvas');
+        treeShadowBuf.width = 300; treeShadowBuf.height = 300;
+        const treeShadowBufCtx = treeShadowBuf.getContext('2d');
+
         function drawFenceShadow(c, f) {
             let dx = f.shadowDX || 0, dy = f.shadowDY || 0;
-            let pts = [
-                { x: f.x1, y: f.y1 }, { x: f.x2, y: f.y2 },
-                { x: f.x2 + dx, y: f.y2 + dy }, { x: f.x1 + dx, y: f.y1 + dy }
+            let safeFrac = clampShadowFraction(f.midX, f.midY, dx, dy);
+            let opacity = groundShadowOpacityAt(f.midX + dx * safeFrac, f.midY + dy * safeFrac);
+            if (opacity <= 0) return;
+            let angle = Math.atan2(f.y2 - f.y1, f.x2 - f.x1);
+            let len = Math.hypot(f.x2 - f.x1, f.y2 - f.y1);
+            let cosA = Math.cos(angle), sinA = Math.sin(angle);
+            let frac = v => Math.min(safeFrac, Math.max(0, Math.min(1, (6 - v) / 20)));
+            let toWorld = (u, v) => {
+                let h = frac(v);
+                let rx = u * cosA - (v * 0.2) * sinA, ry = u * sinA + (v * 0.2) * cosA;
+                return { x: f.midX + rx + dx * h, y: f.midY + ry + dy * h };
+            };
+            let quad = (u0, v0, u1, v1) => [toWorld(u0, v0), toWorld(u1, v0), toWorld(u1, v1), toWorld(u0, v1)];
+            let rings = [
+                quad(-len / 2 - 2, -14, -len / 2 + 3, 6),
+                quad(len / 2 - 3, -14, len / 2 + 2, 6),
+                quad(-len / 2, -10, len / 2, -6),
+                quad(-len / 2, -2, len / 2, 2)
             ];
-            fillShadowPolygon(c, pts);
+            fillShadowPolygon(c, rings, opacity);
         }
 
 
@@ -8997,6 +9070,26 @@
                 ctx.restore();
             }
 
+            // ---- Static-scenery shadow pre-pass: rocks and fences get their shadow drawn here,
+            // before any other object this frame (tiles/decorations are already down, but no
+            // tree/rock/fence/entity has been painted yet) - so whatever object actually occupies
+            // a given spot of ground gets drawn over any shadow that would otherwise show through
+            // it, satisfying "shadows shouldn't overlap other objects" without needing per-pair
+            // occlusion tests. Trees are the one deliberate exception (see the shadow post-pass
+            // after the render queue below): a tree's shadow is allowed to fall across everything
+            // including the player, so it isn't drawn here.
+            for (let i = 0; i < treeCandidates.length; i++) {
+                let obj = treeCandidates[i];
+                if (obj.type !== 'rock') continue;
+                if (!isOnScreen(obj.x + tiltX, obj.y + tiltY, cullBuffer)) continue;
+                projectSilhouetteShadow(ctx, obj.x, obj.y, getRockShadowOutline(obj), obj.shadowDX || 0, obj.shadowDY || 0);
+            }
+            for (let i = 0; i < fences.length; i++) {
+                let f = fences[i];
+                if (!isOnScreen(f.midX + tiltX, f.midY + tiltY, cullBuffer)) continue;
+                drawFenceShadow(ctx, f);
+            }
+
             renderQueue.forEach(item => {
                 let isWaterObj = item.type === 'splash' || item.type === 'icicle';
                 if (isWaterObj) { ctx.save(); ctx.translate(-tiltX, -tiltY); } // Undo tilt for water objects
@@ -9038,7 +9131,7 @@
                     let treeBaseColor = t.golden ? '#8a5a00' : t.onFire ? '#2b1a12' : t.wilted ? '#4a3a2a' : t.frozen ? '#4a6f8a' : currentTheme.treeBase;
                     let treeTopColor = t.golden ? goldGrad : t.onFire ? '#3d1f0a' : t.wilted ? '#5c6b3f' : t.frozen ? '#bfe9f7' : currentTheme.treeTop;
                     let treeAccentColor = t.golden ? '#fff7c2' : t.onFire ? '#ff6b1a' : t.wilted ? '#8a9a5f' : t.frozen ? '#e8f7fc' : (currentTheme.name === "Snow" ? "#fff" : "#388e3c");
-                    projectSilhouetteShadow(ctx, t.x, t.y, getTreeShadowOutline(t), t.shadowDX || 0, t.shadowDY || 0);
+                    
                     ctx.fillStyle = treeBaseColor; ctx.fillRect(t.x - t.radius*0.2, t.y - t.radius*0.1, t.radius*0.4, t.radius*0.9);
                     ctx.save(); ctx.translate(t.x, t.y - t.radius*0.1); ctx.rotate(sway); ctx.translate(-t.x, -(t.y - t.radius*0.1));
                     ctx.fillStyle = treeTopColor;
@@ -9134,7 +9227,7 @@
                     // usual theme art, all the time (see drawRainbowRock).
                     if (player.color === 'rainbow') { window.LegendaryStageEffects.rainbow.drawRainbowRock(ctx, r.x, r.y, r.radius, r.seed || 0); return; }
                     let variant = r.variant || 0;
-                    projectSilhouetteShadow(ctx, r.x, r.y, getRockShadowOutline(r), r.shadowDX || 0, r.shadowDY || 0);
+                    
                     if (r.golden) {
                         let rockGoldGrad = ctx.createLinearGradient(r.x - r.radius, r.y - r.radius, r.x + r.radius, r.y + r.radius);
                         rockGoldGrad.addColorStop(0, '#fff7c2'); rockGoldGrad.addColorStop(0.5, '#ffcc00'); rockGoldGrad.addColorStop(1, '#8a5a00');
@@ -9188,11 +9281,6 @@
                     // gilded - same post-and-rail shape, just swapped to gold posts/rails with
                     // a bright highlighted edge instead of the usual weathered wood.
                     let isGold = f.golden;
-                    // Directional shadow, cast toward the level's shadow light like tree/rock
-                    // shadows - drawn in world space (before the translate/rotate below, which
-                    // is local to the rail's own orientation) since the shadow polygon's own
-                    // points are already world coordinates.
-                    drawFenceShadow(ctx, f);
                     ctx.save(); ctx.translate(f.midX, f.midY); ctx.rotate(angle);
                     ctx.fillStyle = isGold ? '#a9720c' : '#8a5a2b';
                     ctx.fillRect(-len/2 - 2, -14, 5, 20);
@@ -9663,6 +9751,47 @@
                 
                 if (isWaterObj) { ctx.restore(); }
             });
+
+            // ---- Tree shadow post-pass: drawn after every other object this frame (including
+            // the player, enemies, and everything the pre-pass above already shadowed), so a
+            // tree's shadow is allowed to fall across all of them - the one deliberate exception
+            // to "shadows shouldn't overlap other objects" (see the pre-pass above the render
+            // queue). The only thing a tree's shadow still needs to stay clear of is another
+            // tree - so any other nearby tree gets punched back out of it. That punch-out runs on
+            // the small offscreen buffer above rather than directly on the main canvas, since
+            // destination-out would otherwise erase whatever else (player, rock, ...) is already
+            // sitting under that neighboring tree too.
+            for (let i = 0; i < treeCandidates.length; i++) {
+                let t = treeCandidates[i];
+                if (t.type !== 'tree') continue;
+                if (!isOnScreen(t.x + tiltX, t.y + tiltY, cullBuffer)) continue;
+                let nearby = getNearbyTrees(t.x, t.y);
+                let others = [];
+                for (let j = 0; j < nearby.length; j++) {
+                    let o = nearby[j];
+                    if (o === t || o.type !== 'tree') continue;
+                    if (dist(t.x, t.y, o.x, o.y) < t.radius + o.radius + 120) others.push(o);
+                }
+                if (!others.length) {
+                    projectSilhouetteShadow(ctx, t.x, t.y, getTreeShadowOutline(t), t.shadowDX || 0, t.shadowDY || 0);
+                    continue;
+                }
+                treeShadowBufCtx.clearRect(0, 0, 300, 300);
+                treeShadowBufCtx.save();
+                treeShadowBufCtx.translate(150 - t.x, 150 - t.y);
+                projectSilhouetteShadow(treeShadowBufCtx, t.x, t.y, getTreeShadowOutline(t), t.shadowDX || 0, t.shadowDY || 0);
+                treeShadowBufCtx.globalCompositeOperation = 'destination-out';
+                for (let j = 0; j < others.length; j++) {
+                    let o = others[j];
+                    treeShadowBufCtx.beginPath();
+                    treeShadowBufCtx.ellipse(o.x, o.y - o.radius * 0.4, o.radius * 1.15, o.radius * 1.7, 0, 0, Math.PI * 2);
+                    treeShadowBufCtx.fillStyle = 'rgba(0,0,0,1)';
+                    treeShadowBufCtx.fill();
+                }
+                treeShadowBufCtx.restore();
+                ctx.drawImage(treeShadowBuf, t.x - 150, t.y - 150);
+            }
+
             ctx.restore(); 
             ctx.restore();
 
