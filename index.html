@@ -10,6 +10,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Slime Sliders</title>
+
+    <!-- Open Graph / social link previews. og-image.PNG lives alongside index.html in the
+         rethy11.github.io/Slime-Sliders GitHub Pages repo, so it's referenced by its absolute
+         GitHub Pages URL (relative paths aren't reliably resolved by link-preview crawlers). -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Slime Sliders">
+    <meta property="og:description" content="Swipe to slide, swerve past hazards, and gobble your way to the goal — one squishy level at a time.">
+    <meta property="og:url" content="https://rethy11.github.io/Slime-Sliders/">
+    <meta property="og:image" content="https://rethy11.github.io/Slime-Sliders/og-image.PNG">
+    <meta property="og:image:alt" content="Slime Sliders">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Slime Sliders">
+    <meta name="twitter:description" content="Swipe to slide, swerve past hazards, and gobble your way to the goal — one squishy level at a time.">
+    <meta name="twitter:image" content="https://rethy11.github.io/Slime-Sliders/og-image.PNG">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Space Grotesk (weight 600) is pulled in solely for the ported developer/studio splash
@@ -268,7 +283,6 @@
         .modal-header .close-modal-btn { margin: 0; background: #8d99ae; }
         
         .shop-item, .almanac-item, .setting-item { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.1); padding: 15px; margin: 10px 0; border-radius: 10px; text-align: left; }
-        .skin-preview { width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0; }
         h2 { margin-bottom: 20px; }
         
         .setting-item input[type="range"] { width: 120px; cursor: pointer; }
@@ -430,9 +444,7 @@
         }
 
         .enemy-pic { width: 50px; height: 50px; background: rgba(0,0,0,0.3); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; flex-shrink: 0; border: 2px solid #fff; }
-        .enemy-details { flex-grow: 1; margin-left: 15px; }
         .enemy-name { font-weight: bold; color: #ffcf33; font-size: 1.1rem; }
-        .enemy-desc { font-size: 0.85rem; color: #ccc; margin-top: 5px; }
         .locked-entry { filter: grayscale(100%) brightness(0.5); opacity: 0.6; }
 
         /* Item almanac only: name color keyed to rarity instead of the flat yellow every
@@ -558,7 +570,6 @@
             box-shadow: inset 0 0 20px rgba(0,0,0,0.8); 
             box-sizing: border-box;
         }
-        .gacha-machine.shaking { animation: gachaShake 0.4s infinite; border-color: #ffcf33; }
         
         #gacha-canvas {
             width: 100%;
@@ -638,7 +649,6 @@
         #promo-code-btn:active { transform: scale(0.95); }
 
         .inventory-container { display: none; }
-        .inventory-section-title { text-align: left; margin: 15px 0 10px 5px; font-size: 1.1rem; color: #ffcf33; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
         /* Horizontal shop shelf: items fill 3 fixed rows (column-major) and the whole grid
            scrolls left/right as one wide strip, instead of the old vertical wrapping grid. No
            scroll-snap here - it was fighting with the continuous auto-scroll drift (each
@@ -674,7 +684,6 @@
         .inv-count { position: absolute; top: 3px; right: 3px; background: #ffcf33; color: #000; font-size: 0.7rem; font-weight: bold; width: 20px; height: 20px; border-radius: 50%; display: flex; justify-content: center; align-items: center; border: 2px solid #2b2d42; z-index: 2; }
 
         @keyframes gacha-spin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
-        @keyframes gachaShake { 0% { transform: translate(2px, 2px) rotate(0deg); } 25% { transform: translate(-2px, -2px) rotate(-2deg); } 50% { transform: translate(-4px, 0px) rotate(2deg); } 75% { transform: translate(4px, 2px) rotate(0deg); } 100% { transform: translate(2px, -2px) rotate(-2deg); } }
         @keyframes gachaPop { 0% { transform: scale(0); opacity: 0; } 60% { transform: scale(1.3); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
         .anim-pop { animation: gachaPop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
     </style>
@@ -686,12 +695,12 @@
          splash plays, then fades away to reveal the regular title screen below, which this
          overlay does not modify in any way. -->
     <button type="button" class="boot-screen" id="bootScreen" aria-label="Tap to play">
-        <div class="boot-face" id="bootFace">
+        <div class="boot-face">
             <h1>SLIME SLIDERS</h1>
             <p class="boot-tag">Swipe to slide, swerve past hazards, and gobble your way to the goal &mdash; one squishy level at a time.</p>
             <div class="boot-tap">tap to begin</div>
         </div>
-        <div class="studio-face" id="studioFace">
+        <div class="studio-face">
             <div class="eyes" id="studioEyes"><span></span><span></span></div>
             <div class="studio-credit" id="studioCredit">PLASTICINE GAMES</div>
         </div>
@@ -1728,6 +1737,10 @@
         // Kept as its own array (rather than reusing `companions`) since these are transient
         // summons on a recurring timer, not a persistent stack tied to an owned item count.
         let royalJellySlimes = [];
+        // Hazard tiles currently frozen solid/walkable by the Heart of Ice mythic item - see
+        // mythic_yeti's proc and updateFrozenHazards, which counts each one down and reverts
+        // it back to a normal hazard hole once its timer runs out.
+        let frozenHazardTiles = [];
         // Hex tiles the player has slid over while the Glacier ("ice") skin is equipped - these
         // render with Snow-biome ground colors for the rest of the level (see drawIceFrostOverlay).
         let iceFrostedTiles = new Set();
@@ -1783,8 +1796,8 @@
                 desc: 'Periodically summons two angry gacha slimes at your sides, mimicking King Slime\'s own Slime Split - they home in on the nearest enemy and attack.' },
             mythic_desertlion: { id: 'mythic_desertlion', rarity: 'mythic', bossId: 'desertlion', name: 'Sandstorm Horns',
                 desc: 'Charges up a ring, then stays ready - double tap to plant yourself in place, swipe to aim, and unleash a short invincible Sand Charge dash that kills every enemy in your path.' },
-            mythic_yeti: { id: 'mythic_yeti', rarity: 'mythic', bossId: 'yeti', name: 'Frostbound Horn',
-                desc: 'Periodically unleashes the Yeti\'s own Frost Breath - a spray of many icicle shards toward wherever you\'re heading.' },
+            mythic_yeti: { id: 'mythic_yeti', rarity: 'mythic', bossId: 'yeti', name: 'Heart of Ice',
+                desc: 'Emits a chilling pulse that slows enemies and projectiles and freezes hazards solid.' },
             mythic_lavaworm: { id: 'mythic_lavaworm', rarity: 'mythic', bossId: 'lavaworm', name: 'Molten Core',
                 desc: 'Periodically erupts in a Magma Burst of embers, melting a little extra gold out of the ground each time.' },
             mythic_crocodile: { id: 'mythic_crocodile', rarity: 'mythic', bossId: 'crocodile', name: 'Ancient Jaws',
@@ -2202,6 +2215,13 @@
         let audioGraphReady = false;
         let musicGainMaster, gainNormal, gainFast, sfxGainBus;
 
+        // Kept muted (silently playing, so nothing about unlocking/starting it changes) from the
+        // very first tap until the boot overlay's developer splash finishes and the title screen
+        // is revealed - see revealBootMusic(), called from dismissBootScreen(). Music itself still
+        // starts on the tap (setupAudioGraph/play() below), same as before, so autoplay unlocking
+        // is unaffected; only the audible fade-in is delayed.
+        let bootMusicHeld = true;
+
         // Background music: one file per theme/level track, same order as `themes`/level index.
         const musicFiles = ['audio/forest.mp3', 'audio/desert.mp3', 'audio/snow.mp3', 'audio/volcano.mp3', 'audio/swamp.mp3', 'audio/autumn.mp3'];
         // Matching "final ten seconds" danger stinger per track. These are separate, pre-made
@@ -2248,7 +2268,7 @@
             musicGainMaster.connect(actx.destination);
 
             gainNormal = actx.createGain();
-            gainNormal.gain.value = 1;
+            gainNormal.gain.value = bootMusicHeld ? 0 : 1;
             gainNormal.connect(musicGainMaster);
 
             gainFast = actx.createGain();
@@ -2263,6 +2283,20 @@
             sfxGainBus.connect(actx.destination);
 
             audioGraphReady = true;
+        }
+
+        // Fades music audibly in once the boot overlay's developer splash is done (called from
+        // dismissBootScreen). Music has been playing silently since the initial tap the whole
+        // time - this just ramps gainNormal up from 0, same node setMusicDanger already ramps
+        // for its own crossfade, so it stays consistent with whatever danger-state gain it should
+        // land on rather than assuming 1.
+        function revealBootMusic() {
+            if (!bootMusicHeld) return;
+            bootMusicHeld = false;
+            if (!audioGraphReady) return;
+            let now = actx.currentTime;
+            gainNormal.gain.cancelScheduledValues(now); gainNormal.gain.setValueAtTime(gainNormal.gain.value, now);
+            gainNormal.gain.linearRampToValueAtTime(musicDangerActive ? 0 : 1, now + 0.5);
         }
 
         // Loads the normal track and starts it immediately; loads (but does not play) its
@@ -2283,7 +2317,7 @@
             dangerFadeToken++;
             if (audioGraphReady) {
                 let now = actx.currentTime;
-                gainNormal.gain.cancelScheduledValues(now); gainNormal.gain.setValueAtTime(1, now);
+                gainNormal.gain.cancelScheduledValues(now); gainNormal.gain.setValueAtTime(bootMusicHeld ? 0 : 1, now);
                 gainFast.gain.cancelScheduledValues(now); gainFast.gain.setValueAtTime(0, now);
                 musicPlayerFast.pause();
                 musicPlayerNormal.play().catch(() => {});
@@ -3081,6 +3115,14 @@
         // How far a patrol slime can "see" - any enemy within this range breaks it off its
         // patrol to go attack, same as the mutual-destroy collision already does on contact.
         const ROYAL_JELLY_SIGHT_RANGE = 2 * HEX_TILE_DIST;
+        // Heart of Ice (Yeti mythic item, reworked from the old Frostbound Horn icicle-spray):
+        // every proc emits a chilling pulse in this radius around the player. Anything caught
+        // in it - enemies, in-flight projectiles, and hazard tiles (never the outer sky, which
+        // isn't a real tile at all) - stays chilled/frozen for HEART_OF_ICE_DURATION frames,
+        // independent of how long it's actually inside the radius.
+        const HEART_OF_ICE_RADIUS = 3.5 * HEX_TILE_DIST;
+        const HEART_OF_ICE_DURATION = 120; // 2 seconds at 60fps
+        const HEART_OF_ICE_SLOW = 0.35; // enemies/projectiles move at 35% speed while chilled
 
         const mythicItemEngine = {
             mythic_kingslime: {
@@ -3092,7 +3134,7 @@
                 // ROYAL_JELLY_PATROL_RADIUS of that point - it never follows the player.
                 // Otherwise these function exactly like Slime Squad companions - see the
                 // royalJellySlimes movement/collision blocks in update().
-                proc: (count) => {
+                proc: () => {
                     let facing = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
                     let sides = [facing - Math.PI / 2, facing + Math.PI / 2];
                     for (let side of sides) {
@@ -3113,36 +3155,52 @@
             // recurring auto-fire proc like the others. Its ring-charge/aim/dash logic is
             // ticked directly in update() and triggered by handleLionDoubleTap().
             mythic_yeti: {
-                baseInterval: 480, tint: '#bfe8f5',
-                proc: (count) => {
-                    // Mimics the Yeti's own many-bullets attack (Frost Breath): a spray of
-                    // icicle shards fired in a tight cone toward wherever you're heading.
-                    let facing = (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) ? Math.atan2(player.vy, player.vx) : (player.facing || 0);
-                    let n = 9 + count * 3; let spread = 0.85;
-                    for (let i = 0; i < n; i++) {
-                        let t = n === 1 ? 0 : (i / (n - 1)) - 0.5;
-                        let a = facing + t * spread;
-                        let speed = 3 + Math.random() * 1.5;
-                        icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 260, radius: 7, tint: '#bfe8f5' });
+                // Every 5s. Reworked from the old Frostbound Horn icicle-spray into an aura
+                // pulse - see HEART_OF_ICE_* above and updateFrozenHazards for how the
+                // chill/freeze itself is ticked and cleared back off each affected thing.
+                baseInterval: 300, tint: '#bfe8f5',
+                proc: () => {
+                    let radius = HEART_OF_ICE_RADIUS;
+
+                    for (let e of enemies) {
+                        if (dist(player.worldX, player.worldY, e.x, e.y) > radius) continue;
+                        if (!e.chilled) { e.chilled = true; e._preChillSpeed = e.speed; e.speed *= HEART_OF_ICE_SLOW; }
+                        e.chillTimer = HEART_OF_ICE_DURATION;
                     }
+                    for (let p of projectiles) {
+                        if (dist(player.worldX, player.worldY, p.x, p.y) > radius) continue;
+                        if (!p.chilled) { p.chilled = true; p._preChillVx = p.vx; p._preChillVy = p.vy; p.vx *= HEART_OF_ICE_SLOW; p.vy *= HEART_OF_ICE_SLOW; }
+                        p.chillTimer = HEART_OF_ICE_DURATION;
+                    }
+                    // Freeze hazard tiles solid (walkable) - skip real bridges (already
+                    // walkable land) and, since off-map sky has no tile object at all, the
+                    // outer sky is automatically excluded just by iterating hexTiles.
+                    for (let tile of hexTiles.values()) {
+                        if (tile.type !== 'hole' || tile.isBridge) continue;
+                        if (dist(player.worldX, player.worldY, tile.x, tile.y) > radius) continue;
+                        if (!tile.iceBridge) { tile.iceBridge = true; tile.type = 'land'; frozenHazardTiles.push(tile); }
+                        tile.iceBridgeTimer = HEART_OF_ICE_DURATION;
+                    }
+
+                    splashes.push({ x: player.worldX, y: player.worldY, vx: 0, vy: 0, life: 1, maxLife: 1, type: 'frostring', color: '#bfe8f5', maxRadius: radius });
                     playSFX('ice_nova');
                 }
             },
             mythic_lavaworm: {
                 baseInterval: 440, tint: '#ff6a2b',
-                proc: (count) => {
-                    let n = 5 + count * 2; let baseA = Math.random() * Math.PI * 2;
+                proc: () => {
+                    let n = 7; let baseA = Math.random() * Math.PI * 2;
                     for (let i = 0; i < n; i++) { let a = baseA + (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*3.4, vy: Math.sin(a)*3.4, angle: a, traveled: 0, maxRange: 280, radius: 7, tint: '#ff6a2b' }); }
                     // Utility: melts a little bonus gold out of the ground each proc.
-                    grantGold(3 + count * 2);
+                    grantGold(5);
                     playSFX('fire');
                 }
             },
             mythic_crocodile: {
                 baseInterval: 460, tint: '#5a7a2e',
-                proc: (count) => {
+                proc: () => {
                     let facing = Math.atan2(player.vy, player.vx) || 0;
-                    let n = 5 + count;
+                    let n = 6;
                     for (let i = 0; i < n; i++) { let a = facing - Math.PI/2 + (i/(n-1||1)) * Math.PI; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*4.5, vy: Math.sin(a)*4.5, angle: a, traveled: 0, maxRange: 260, radius: 7, tint: '#5a7a2e' }); }
                     // Utility: snaps any nearby incoming projectiles out of the air.
                     for (let p of projectiles) { if (!p.deflected && dist(p.x, p.y, player.worldX, player.worldY) < 130) p.deflected = true; }
@@ -3151,8 +3209,8 @@
             },
             mythic_bear: {
                 baseInterval: 500, tint: '#7a5233',
-                proc: (count) => {
-                    let n = 7 + count; let speed = 3.2;
+                proc: () => {
+                    let n = 8; let speed = 3.2;
                     for (let i = 0; i < n; i++) { let a = (i / n) * Math.PI * 2; icicles.push({ x: player.worldX, y: player.worldY, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, angle: a, traveled: 0, maxRange: 240, radius: 8, tint: '#7a5233' }); }
                     // Utility: shoves every nearby enemy back away from the player.
                     for (let e of enemies) { let d = dist(player.worldX, player.worldY, e.x, e.y); if (d < 200 && d > 1) { let dx = e.x - player.worldX, dy = e.y - player.worldY; e.x += (dx/d) * 14; e.y += (dy/d) * 14; } }
@@ -3162,20 +3220,32 @@
             }
         };
 
-        // Ticks every mythic item currently held, once per frame. Each stack shortens the
-        // interval (diminishing, like Spikes/Wilkshirian Knowledge) rather than firing extra
-        // bursts on the same frame count - keeps a single timer per id instead of one per stack.
+        // Ticks every mythic item currently held, once per frame. Mythic items are one-per-run
+        // (see bossItemsAwarded), so each id here fires its proc on a plain fixed interval.
         function updateMythicItems() {
             for (let id in mythicItemEngine) {
-                let count = runItems[id];
-                if (!count) continue;
+                if (!runItems[id]) continue;
                 let eng = mythicItemEngine[id];
                 player.mythicTimers = player.mythicTimers || {};
                 player.mythicTimers[id] = (player.mythicTimers[id] || 0) + 1;
-                let interval = Math.max(120, eng.baseInterval - (count - 1) * 60);
-                if (player.mythicTimers[id] >= interval) {
+                if (player.mythicTimers[id] >= eng.baseInterval) {
                     player.mythicTimers[id] = 0;
-                    eng.proc(count);
+                    eng.proc();
+                }
+            }
+        }
+
+        // Ticks every hazard tile currently frozen solid by Heart of Ice, reverting it back
+        // to a normal hazard hole once its timer runs out. A later proc catching the same
+        // tile again just tops iceBridgeTimer back up (see mythic_yeti's proc) rather than
+        // pushing a duplicate entry here.
+        function updateFrozenHazards() {
+            for (let i = frozenHazardTiles.length - 1; i >= 0; i--) {
+                let tile = frozenHazardTiles[i];
+                tile.iceBridgeTimer--;
+                if (tile.iceBridgeTimer <= 0) {
+                    tile.type = 'hole'; tile.iceBridge = false;
+                    frozenHazardTiles.splice(i, 1);
                 }
             }
         }
@@ -3735,15 +3805,12 @@
             }
         }
 
-        // Fences have a base chance to appear along any land-hex edge that faces a hazard hole
-        // or the sky, then a couple of relaxation passes raise the odds for hexes sitting next
-        // to an already-fenced border hex, so fences tend to link up into continuous runs
-        // instead of scattering randomly. Fences never occupy a hex's single-element slot.
-        function buildFences() {
-            fences = [];
-            borderHexList = findBorderHexes();
-            const baseChance = 0.09, linkChance = 0.32, relaxPasses = 2;
-            for (let tile of borderHexList) tile.hasFence = Math.random() < baseChance;
+        // Shared second half of fence generation: relaxation passes that raise the odds for
+        // hexes bordering an already-fenced hex (so fences link into continuous runs rather
+        // than scattering), then building the actual line segments from every hex that ended
+        // up fenced. Used by both buildFences() and buildSurvivalFences(), which differ only
+        // in how they seed each tile's initial hasFence value.
+        function relaxAndBuildFences(linkChance, relaxPasses) {
             for (let pass = 0; pass < relaxPasses; pass++) {
                 for (let tile of borderHexList) {
                     if (tile.hasFence) continue;
@@ -3765,6 +3832,18 @@
             }
         }
 
+        // Fences have a base chance to appear along any land-hex edge that faces a hazard hole
+        // or the sky, then a couple of relaxation passes raise the odds for hexes sitting next
+        // to an already-fenced border hex, so fences tend to link up into continuous runs
+        // instead of scattering randomly. Fences never occupy a hex's single-element slot.
+        function buildFences() {
+            fences = [];
+            borderHexList = findBorderHexes();
+            const baseChance = 0.09, linkChance = 0.32, relaxPasses = 2;
+            for (let tile of borderHexList) tile.hasFence = Math.random() < baseChance;
+            relaxAndBuildFences(linkChance, relaxPasses);
+        }
+
         // Roguelite: Skeleton Key item - places one bonus chest per stack on open land hexes,
         // same placement rule as the normal chest (pickLandHex fallback to any land tile). Their
         // loot always excludes legendaries (see the excludeLegendary param on rollRoguelikeItem,
@@ -3781,9 +3860,53 @@
             }
         }
 
+        // Carves interior hazard-hole clusters: hazard only fills gaps fully surrounded by land,
+        // never touching the outer sky boundary, and never the player's spawn or the goal. Holes
+        // grow from a seed into a small cluster (rather than each tile rolling independently) so
+        // a hazard patch is almost never a single isolated hexagon. Shared by generateLevel() and
+        // generateSurvivalLevel(), which previously each carried their own copy of this - the only
+        // real difference between the two was the seed chance (0.03 vs 0.035), now a parameter.
+        // Rebuilds landHexList/holeHexList as a side effect and returns hazardClusters (used by
+        // spawnHazardDocks to find large pools worth decorating with a pier).
+        function carveHazardClusters(goalTile, holeSeedChance) {
+            function isInterior(tile) { return HEX_DIRS.every(d => hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r))); }
+            const holeGrowChance = 0.55, minClusterSize = 2, maxClusterSize = 6;
+            let carved = new Set();
+            let hazardClusters = [];
+            for (let tile of hexTiles.values()) {
+                if (tile === goalTile || carved.has(tile)) continue;
+                if (dist(tile.x, tile.y, 0, 0) < 220) continue;
+                if (!isInterior(tile)) continue;
+                if (Math.random() >= holeSeedChance) continue;
+                let targetSize = minClusterSize + Math.floor(Math.random() * (maxClusterSize - minClusterSize + 1));
+                let cluster = [tile];
+                tile.type = 'hole'; carved.add(tile);
+                let frontier = [tile];
+                while (cluster.length < targetSize && frontier.length) {
+                    let cur = frontier.shift();
+                    let dirsShuffled = HEX_DIRS.slice().sort(() => Math.random() - 0.5);
+                    for (let d of dirsShuffled) {
+                        if (cluster.length >= targetSize) break;
+                        let nb = hexTiles.get(hexKey(cur.q + d.q, cur.r + d.r));
+                        if (!nb || nb === goalTile || carved.has(nb) || nb.type === 'hole') continue;
+                        if (dist(nb.x, nb.y, 0, 0) < 220) continue;
+                        if (!isInterior(nb)) continue;
+                        // Force the very first neighbor so a hole is almost never left as a lone
+                        // tile; subsequent growth is probabilistic to keep clusters small.
+                        let forceAdd = cluster.length === 1;
+                        if (forceAdd || Math.random() < holeGrowChance) { nb.type = 'hole'; carved.add(nb); cluster.push(nb); frontier.push(nb); }
+                    }
+                }
+                hazardClusters.push(cluster);
+            }
+            landHexList = []; holeHexList = [];
+            for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
+            return hazardClusters;
+        }
+
         function generateLevel() {
             items = []; enemies = []; trees = []; hives = []; decorations = []; projectiles = []; icicles = []; iceBlocks = [];
-            flameParticles = []; leaves = []; splashes = []; powerups = []; chest = null; fishingScene = null; skeletonChests = []; surviveChests = []; skinTrader = null; goldTrader = null; docks = [];
+            flameParticles = []; leaves = []; splashes = []; powerups = []; chest = null; fishingScene = null; skeletonChests = []; surviveChests = []; skinTrader = null; goldTrader = null; docks = []; frozenHazardTiles = [];
             hexTiles = new Map(); landHexList = []; holeHexList = []; borderHexList = []; fences = [];
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.hazardTimer = 0; player.spikesTimer = 0;
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0;
@@ -3884,44 +4007,8 @@
             let goalTile = hexTiles.get(goalKey);
             if (!goalTile) { let p = axialToPixel(goalHexCoord.q, goalHexCoord.r); goalTile = { q: goalHexCoord.q, r: goalHexCoord.r, x: p.x, y: p.y, type: 'land', element: null, hasFence: false, fenceCandidateDirs: null }; hexTiles.set(goalKey, goalTile); }
 
-            // ---- Carve interior hazard clusters: hazard only fills gaps fully surrounded by
-            // land, never touching the outer sky boundary, and never the player's spawn or the
-            // goal. Holes grow from a seed into a small cluster (rather than each tile rolling
-            // independently) so a hazard patch is almost never a single isolated hexagon. ----
-            function isInterior(tile) { return HEX_DIRS.every(d => hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r))); }
-            const holeSeedChance = 0.03, holeGrowChance = 0.55, minClusterSize = 2, maxClusterSize = 6;
-            let carved = new Set();
-            // Every carved cluster gets recorded here (used below by spawnHazardDocks to find
-            // large pools worth decorating with a pier).
-            let hazardClusters = [];
-            for (let tile of hexTiles.values()) {
-                if (tile === goalTile || carved.has(tile)) continue;
-                if (dist(tile.x, tile.y, 0, 0) < 220) continue;
-                if (!isInterior(tile)) continue;
-                if (Math.random() >= holeSeedChance) continue;
-                let targetSize = minClusterSize + Math.floor(Math.random() * (maxClusterSize - minClusterSize + 1));
-                let cluster = [tile];
-                tile.type = 'hole'; carved.add(tile);
-                let frontier = [tile];
-                while (cluster.length < targetSize && frontier.length) {
-                    let cur = frontier.shift();
-                    let dirsShuffled = HEX_DIRS.slice().sort(() => Math.random() - 0.5);
-                    for (let d of dirsShuffled) {
-                        if (cluster.length >= targetSize) break;
-                        let nb = hexTiles.get(hexKey(cur.q + d.q, cur.r + d.r));
-                        if (!nb || nb === goalTile || carved.has(nb) || nb.type === 'hole') continue;
-                        if (dist(nb.x, nb.y, 0, 0) < 220) continue;
-                        if (!isInterior(nb)) continue;
-                        // Force the very first neighbor so a hole is almost never left as a lone
-                        // tile; subsequent growth is probabilistic to keep clusters small.
-                        let forceAdd = cluster.length === 1;
-                        if (forceAdd || Math.random() < holeGrowChance) { nb.type = 'hole'; carved.add(nb); cluster.push(nb); frontier.push(nb); }
-                    }
-                }
-                hazardClusters.push(cluster);
-            }
-            landHexList = []; holeHexList = [];
-            for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
+            // ---- Carve interior hazard clusters (see carveHazardClusters for the rules). ----
+            let hazardClusters = carveHazardClusters(goalTile, 0.03);
             buildIslandBridges();
             buildLandTileGrid();
 
@@ -4179,43 +4266,10 @@
 
             let goalTile = hexTiles.get(hexKey(0, 0));
 
-            // ---- Carve interior hazard pools: same rule as a normal level - hazard only fills
-            // gaps fully surrounded by land, never touching the outer sky boundary and never the
-            // center (player spawn / goal), and grows from a seed into a small cluster so pools
-            // read as deliberate hazards rather than single stray hexes. ----
-            function survivalIsInterior(tile) { return HEX_DIRS.every(d => hexTiles.has(hexKey(tile.q + d.q, tile.r + d.r))); }
-            const holeSeedChance = 0.035, holeGrowChance = 0.55, minClusterSize = 2, maxClusterSize = 6;
-            let carved = new Set();
-            // Every carved cluster gets recorded here (used below by spawnHazardDocks to find
-            // large pools worth decorating with a pier) - same bookkeeping generateLevel() does.
-            let hazardClusters = [];
-            for (let tile of hexTiles.values()) {
-                if (tile === goalTile || carved.has(tile)) continue;
-                if (dist(tile.x, tile.y, 0, 0) < 220) continue;
-                if (!survivalIsInterior(tile)) continue;
-                if (Math.random() >= holeSeedChance) continue;
-                let targetSize = minClusterSize + Math.floor(Math.random() * (maxClusterSize - minClusterSize + 1));
-                let cluster = [tile];
-                tile.type = 'hole'; carved.add(tile);
-                let frontier = [tile];
-                while (cluster.length < targetSize && frontier.length) {
-                    let cur = frontier.shift();
-                    let dirsShuffled = HEX_DIRS.slice().sort(() => Math.random() - 0.5);
-                    for (let d of dirsShuffled) {
-                        if (cluster.length >= targetSize) break;
-                        let nb = hexTiles.get(hexKey(cur.q + d.q, cur.r + d.r));
-                        if (!nb || nb === goalTile || carved.has(nb) || nb.type === 'hole') continue;
-                        if (dist(nb.x, nb.y, 0, 0) < 220) continue;
-                        if (!survivalIsInterior(nb)) continue;
-                        let forceAdd = cluster.length === 1;
-                        if (forceAdd || Math.random() < holeGrowChance) { nb.type = 'hole'; carved.add(nb); cluster.push(nb); frontier.push(nb); }
-                    }
-                }
-                hazardClusters.push(cluster);
-            }
+            // ---- Carve interior hazard pools (see carveHazardClusters for the rules; survival
+            // uses a slightly higher seed chance than a normal level). ----
+            let hazardClusters = carveHazardClusters(goalTile, 0.035);
 
-            landHexList = []; holeHexList = [];
-            for (let tile of hexTiles.values()) { if (tile.type === 'hole') holeHexList.push(tile); else landHexList.push(tile); }
             buildLandTileGrid();
 
             if (!goalTile) goalTile = landHexList[0];
@@ -4277,7 +4331,8 @@
         // enclosed ring, matching "surrounded by fence"), while edges that only face an
         // interior hazard pool keep the normal game's probabilistic base-chance + neighbor-
         // linking behavior so hazard fencing still looks organic rather than mechanically
-        // uniform. Mirrors buildFences()'s structure/params exactly aside from that one change.
+        // uniform. Shares its relaxation-pass + build step with buildFences() via
+        // relaxAndBuildFences(); only the initial per-tile seeding differs.
         function buildSurvivalFences() {
             fences = [];
             borderHexList = findBorderHexes();
@@ -4289,25 +4344,7 @@
                 });
                 tile.hasFence = touchesSky ? true : Math.random() < baseChance;
             }
-            for (let pass = 0; pass < relaxPasses; pass++) {
-                for (let tile of borderHexList) {
-                    if (tile.hasFence) continue;
-                    let neighborHasFence = false;
-                    for (let d of HEX_DIRS) {
-                        let nb = hexTiles.get(hexKey(tile.q + d.q, tile.r + d.r));
-                        if (nb && nb.fenceCandidateDirs && nb.hasFence) { neighborHasFence = true; break; }
-                    }
-                    if (neighborHasFence && Math.random() < linkChance) tile.hasFence = true;
-                }
-            }
-            for (let tile of borderHexList) {
-                if (!tile.hasFence) continue;
-                for (let dirIdx of tile.fenceCandidateDirs) {
-                    let d = HEX_DIRS[dirIdx];
-                    let [p1, p2] = hexEdgeCorners(tile, d.q, d.r);
-                    fences.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, midX: (p1.x+p2.x)/2, midY: (p1.y+p2.y)/2 });
-                }
-            }
+            relaxAndBuildFences(linkChance, relaxPasses);
         }
 
         // Flashes the "Survive!" banner for a couple seconds when a Survival level loads.
@@ -4416,6 +4453,15 @@
         // SECTION 6 - UI & INPUT HANDLING
         // Event listeners, HUD logic, popups, and shops.
         // ==========================================
+        // Thin wrappers around the show/hide of a class="modal" element. Introduced to replace
+        // ~12 duplicated `document.getElementById(id).style.display = 'block'/'none'` call sites
+        // for the real modals (shop, info, promo, merchant, almanac, almanac-detail,
+        // item-preview, settings, level). Deliberately scoped to just those - other display
+        // toggles in this file (title-screen, game-over-screen, ui-layer, etc.) aren't modals
+        // and are left as direct style writes.
+        function showModal(id) { document.getElementById(id).style.display = 'block'; }
+        function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+
         let gachaSlimes = [];
         let draggedGachaSlime = null;
         let gachaAnimId = null;
@@ -4485,8 +4531,23 @@
                 window.addEventListener('deviceorientation', handleDeviceTilt);
             }
         }
+        // PERF: every per-frame "what's visible" scan (computeVisibleLandTiles, drawHazardHoles,
+        // the tree/decoration/enemy culling loops in draw(), isNearScreen checks in update()) does
+        // work roughly proportional to canvas.width * canvas.height, because that's how big a
+        // world-space slice the camera shows. Previously canvas.width/height were set to the raw
+        // window size, so a large desktop monitor (e.g. 1920x1080, ~2.07M px) was forcing several
+        // times more of this per-frame work than a phone screen (e.g. ~390x844, ~0.33M px) - the
+        // same code, just with a much bigger "how much of the world do I need to check" budget.
+        // Capping the logical resolution here keeps that budget bounded on big screens while
+        // leaving small screens (phones) completely untouched, since scale is never > 1. The
+        // on-screen displayCanvas still fills the whole window - the existing renderPixelated()
+        // pipeline already stretches the smaller offscreen buffer up to fill it, exactly the way
+        // it already stretches pixelCanvas up to displayCanvas for the chunky-pixel look.
+        const MAX_LOGICAL_PIXELS = 1280 * 800; // lower this (e.g. 960*600) if it's still heavy
         function resize() {
-            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+            let w = window.innerWidth, h = window.innerHeight;
+            let scale = Math.min(1, Math.sqrt(MAX_LOGICAL_PIXELS / (w * h)));
+            canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
             displayCanvas.width = window.innerWidth; displayCanvas.height = window.innerHeight;
             pixelCanvas.width = Math.max(1, Math.ceil(canvas.width / PIXEL_SCALE));
             pixelCanvas.height = Math.max(1, Math.ceil(canvas.height / PIXEL_SCALE));
@@ -4641,6 +4702,25 @@
                 return { category: 'basic', itemData: basicSkins[Math.floor(Math.random() * basicSkins.length)], radius: 16 };
             }
         }
+
+        // Builds one physical gachaSlimes entry from a freshly-rolled item. Shared by the
+        // initial pool fill and the x10-pull top-up, which used to duplicate this object
+        // literal verbatim.
+        function makeGachaSlime() {
+            let { category, itemData, radius } = rollGachaItem();
+            return {
+                x: 40 + Math.random() * 220,
+                y: 100 + Math.random() * 100,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                radius: radius,
+                color: itemData.color || '#3498db',
+                isAnimated: itemData.isAnimated,
+                preview: itemData.preview,
+                category: category,
+                skinData: itemData
+            };
+        }
         function getGachaCanvasMousePos(e) {
             let rect = gachaCanvas.getBoundingClientRect();
             let clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -4697,19 +4777,7 @@
 
             const GACHA_POOL_SIZE = 28;
             for (let i = 0; i < GACHA_POOL_SIZE; i++) {
-                let { category, itemData, radius } = rollGachaItem();
-                gachaSlimes.push({
-                    x: 40 + Math.random() * 220,
-                    y: 100 + Math.random() * 100,
-                    vx: (Math.random() - 0.5) * 2,
-                    vy: (Math.random() - 0.5) * 2,
-                    radius: radius,
-                    color: itemData.color || '#3498db',
-                    isAnimated: itemData.isAnimated,
-                    preview: itemData.preview,
-                    category: category,
-                    skinData: itemData
-                });
+                gachaSlimes.push(makeGachaSlime());
             }
 
             gachaCanvas.onmousedown = gachaCanvas.ontouchstart = (e) => {
@@ -5105,19 +5173,7 @@
             // this never happens on a freshly opened shop (bowl starts full) but keeps a bulk
             // pull from ever coming up short deep into a session.
             while (gachaSlimes.length < 10) {
-                let { category, itemData, radius } = rollGachaItem();
-                gachaSlimes.push({
-                    x: 40 + Math.random() * 220,
-                    y: 100 + Math.random() * 100,
-                    vx: (Math.random() - 0.5) * 2,
-                    vy: (Math.random() - 0.5) * 2,
-                    radius: radius,
-                    color: itemData.color || '#3498db',
-                    isAnimated: itemData.isAnimated,
-                    preview: itemData.preview,
-                    category: category,
-                    skinData: itemData
-                });
+                gachaSlimes.push(makeGachaSlime());
             }
 
             totalCoins -= GACHA_TEN_COST; storage.set('landSlidersCoins', totalCoins); updateHUD(); updateShopButtons();
@@ -5506,7 +5562,7 @@
                 equipBtn.innerText = isEquipped ? 'Equipped' : 'Equip';
                 equipBtn.onclick = () => {
                     equipItem(kind, id);
-                    document.getElementById('item-preview-modal').style.display = 'none';
+                    hideModal('item-preview-modal');
                     stopItemPreviewAnim();
                 };
             } else {
@@ -5515,7 +5571,7 @@
                 equipBtn.onclick = null;
             }
 
-            document.getElementById('item-preview-modal').style.display = 'block';
+            showModal('item-preview-modal');
         }
 
         // Grants the secret "Corrupted Data" skin the first time 20 consecutive Remove Hat
@@ -5545,7 +5601,7 @@
         };
 
         function openPromoModal() {
-            document.getElementById('promo-modal').style.display = 'block';
+            showModal('promo-modal');
             document.getElementById('promo-code-msg').innerText = '';
             initAudio();
         }
@@ -5643,7 +5699,7 @@
         function toggleShop() {
             if (gameState === 'playing') { previousState = gameState;
             gameState = 'paused'; }
-            document.getElementById('shop-modal').style.display = 'block';
+            showModal('shop-modal');
             requestTiltPermission();
             buildShopUI();
             switchShopTab('gacha');
@@ -5665,7 +5721,7 @@
             detailIcon.style.filter = iconGreyed ? 'grayscale(100%) brightness(0.5)' : '';
             document.getElementById('almanac-detail-name').innerText = name;
             document.getElementById('almanac-detail-desc').innerText = desc;
-            document.getElementById('almanac-detail-modal').style.display = 'block';
+            showModal('almanac-detail-modal');
             const unlocksRow = document.getElementById('almanac-detail-unlocks');
             if (unlockIconSrc) {
                 document.getElementById('almanac-detail-unlocks-icon').src = unlockIconSrc;
@@ -5777,7 +5833,7 @@
         function toggleInfo() {
             if (gameState === 'playing') { previousState = gameState;
             gameState = 'paused'; }
-            document.getElementById('info-modal').style.display = 'block';
+            showModal('info-modal');
             initAudio();
         }
 
@@ -5807,7 +5863,7 @@
             gameState = 'paused'; }
             else if (gameState !== 'paused') { previousState = gameState;
             gameState = 'paused'; }
-            document.getElementById('almanac-modal').style.display = 'block'; switchAlmanacTab('achievements'); initAudio();
+            showModal('almanac-modal'); switchAlmanacTab('achievements'); initAudio();
         }
 
         function toggleSettings() {
@@ -5817,7 +5873,7 @@
             gameState = 'paused'; }
             else if (gameState !== 'paused') { previousState = gameState;
             gameState = 'paused'; }
-            document.getElementById('settings-modal').style.display = 'block'; syncSettingsUI(); initAudio();
+            showModal('settings-modal'); syncSettingsUI(); initAudio();
             document.getElementById('leave-game-btn').style.display = (previousState === 'playing' || previousState === 'level_end') ? 'block' : 'none';
         }
 
@@ -5835,7 +5891,7 @@
 
         function nextLevel() {
             level++;
-            document.getElementById('level-modal').style.display = 'none';
+            hideModal('level-modal');
             let gradeBadge = document.getElementById('level-grade-badge');
             // Must also drop 'slam' here, not just zero the inline opacity: the .slam keyframe
             // ends on opacity:1 with animation-fill-mode:forwards, and a fill-forwards animation
@@ -5992,7 +6048,7 @@
                 ? "Spare skin dupes for a pick from today's stock - one is a Dupe Trader exclusive. Each pick's a one-time deal."
                 : "Gold for a pick from today's stock. Each pick's a one-time deal.";
             renderMerchantItems();
-            document.getElementById('merchant-dialogue').style.display = 'block';
+            showModal('merchant-dialogue');
         }
 
         // (Re)draws both stock slots for the currently open trader, greying out and disabling
@@ -6178,10 +6234,10 @@
         document.getElementById('title-settings-btn').addEventListener('click', toggleShop);
         document.getElementById('settings-corner-btn').addEventListener('click', toggleSettings);
         document.getElementById('almanac-detail-close-btn').addEventListener('click', () => {
-            document.getElementById('almanac-detail-modal').style.display = 'none';
+            hideModal('almanac-detail-modal');
         });
         document.getElementById('item-preview-close-btn').addEventListener('click', () => {
-            document.getElementById('item-preview-modal').style.display = 'none';
+            hideModal('item-preview-modal');
             stopItemPreviewAnim();
         });
         document.querySelectorAll('.close-modal-btn').forEach(btn => {
@@ -6198,7 +6254,7 @@
         document.getElementById('sfx-slider').addEventListener('input', e => { userSettings.sfxVol = parseFloat(e.target.value); storage.set('ls_sfx', userSettings.sfxVol); playSFX('click'); initAudio(); });
         document.getElementById('controls-toggle').addEventListener('click', e => { userSettings.invert = !userSettings.invert; storage.set('ls_invert', userSettings.invert); syncSettingsUI(); });
         document.getElementById('leave-game-btn').addEventListener('click', () => {
-            document.getElementById('settings-modal').style.display = 'none';
+            hideModal('settings-modal');
             document.getElementById('game-over-screen').style.display = 'none';
             document.getElementById('ui-layer').style.display = 'none';
             document.getElementById('title-screen').style.display = 'flex';
@@ -6570,6 +6626,7 @@
 
                     // --- Mythic boss items: recurring attack-mimic procs (see updateMythicItems) ---
                     updateMythicItems();
+                    updateFrozenHazards();
 
                     // --- Mythic: Sandstorm Horns (Minotaur) - ring charges like Plasma Beam but,
                     // unlike Plasma Beam, stays full/ready once charged instead of auto-firing.
@@ -6888,6 +6945,10 @@
                         if (!isNearScreen(e.x, e.y, e.radius)) continue;
                         let speedMod = 1 + (Math.min(20, level) * 0.05);
                         let dToPlayer = dist(player.worldX, player.worldY, e.x, e.y);
+                        // Heart of Ice: while chilled, this enemy's own e.speed is already
+                        // scaled down (set when the pulse first caught it), so every movement
+                        // branch below slows for free without needing its own check.
+                        if (e.chilled) { e.chillTimer--; if (e.chillTimer <= 0) { e.speed = e._preChillSpeed; e.chilled = false; } }
                         
                         if ((e.type === 'dasher' || e.type === 'wanderer') && !isSafe(e.x, e.y)) {
                             spawnSplash(e.x, e.y); destroyEnemyByIndex(i, [0,0]); continue;
@@ -6998,7 +7059,11 @@
                                 // sight, matched by the fade-out drawn in drawBossGeneric and the
                                 // resurfacing splash exec() fires later at the new spot.
                                 if (e.currentAttack.isAmbush && e.stateTimer === 0) { spawnSplash(e.x, e.y); }
-                                e.stateTimer++;
+                                // Heart of Ice: chilled bosses telegraph their attacks in slow
+                                // motion too, not just move slower - safe to do with a
+                                // fractional increment since this state only ever compares
+                                // stateTimer with >= and === 0, never an exact frame count.
+                                e.stateTimer += (e.chilled ? HEART_OF_ICE_SLOW : 1);
                                 if (e.stateTimer >= e.currentAttack.telegraph) {
                                     e.currentAttack.exec(e);
                                     e.state = 'attack'; e.stateTimer = 0;
@@ -7190,7 +7255,7 @@
                         let levelTitleEl = document.getElementById('level-title');
                         if (levelTitleEl) levelTitleEl.innerText = isSurvivalLevel ? 'You Survived!' : 'Level Complete!';
                         showLevelCompleteSynopsis();
-                        updateHUD(); playSFX('powerup_pickup'); document.getElementById('level-modal').style.display = 'block';
+                        updateHUD(); playSFX('powerup_pickup'); showModal('level-modal');
                         runLevelCompleteSequence();
                     }
                 }
@@ -7204,6 +7269,7 @@
                 for (let i = projectiles.length - 1; i >= 0; i--) {
                     let p = projectiles[i];
                     if (!isNearScreen(p.x, p.y)) { projectiles.splice(i, 1); continue; }
+                    if (p.chilled) { p.chillTimer--; if (p.chillTimer <= 0) { p.vx = p._preChillVx; p.vy = p._preChillVy; p.chilled = false; } }
                     p.x += p.vx; p.y += p.vy; let hitObstacle = false;
                         for (let j = companions.length - 1; j >= 0; j--) {
                             let comp = companions[j];
@@ -7732,6 +7798,20 @@
             ctx.globalCompositeOperation = 'source-atop';
             ctx.globalAlpha = 0.5 + Math.sin(t / 180) * 0.15;
             ctx.fillStyle = '#39ff14';
+            ctx.fillRect(x - radius * 1.6, y - radius * 1.6, radius * 3.2, radius * 3.2);
+            ctx.restore();
+        }
+
+        // Heart of Ice: same source-atop tint trick as drawIrradiatedTint above, but a steady
+        // light blue rather than a pulsing green, so a chilled enemy visibly reads as slowed
+        // on top of whatever sprite it's already wearing. Call after the entity's normal sprite
+        // has been drawn.
+        function drawChilledTint(x, y, radius) {
+            ctx.save();
+            ctx.beginPath(); ctx.arc(x, y, radius * 1.6, 0, Math.PI * 2); ctx.clip();
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = '#bfe8f5';
             ctx.fillRect(x - radius * 1.6, y - radius * 1.6, radius * 3.2, radius * 3.2);
             ctx.restore();
         }
@@ -8606,6 +8686,34 @@
                     ctx.restore();
                 }
             }
+            // Heart of Ice: hazard tiles frozen solid by the mythic item get an actual ice-cap
+            // look - a light blue sheet with a faint crackled shine - rather than just quietly
+            // behaving like land. tile.iceBridge is set/cleared by mythic_yeti's proc and
+            // updateFrozenHazards, so this naturally disappears the moment a tile thaws back
+            // into a hazard hole. Distinct in color/texture from the Glacier skin's permanent
+            // frost above so the two never read as the same thing.
+            if (frozenHazardTiles.length) {
+                let frozenVisible = visLand.filter(t => t.iceBridge);
+                if (frozenVisible.length) {
+                    ctx.save();
+                    pathHexUnion(ctx, frozenVisible);
+                    ctx.globalAlpha = 0.9; ctx.fillStyle = '#bfe8f5'; ctx.fill();
+                    ctx.globalAlpha = 1; ctx.strokeStyle = '#4fa3c7'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.restore();
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5;
+                    for (let ft of frozenVisible) {
+                        ctx.beginPath();
+                        ctx.moveTo(ft.x - HEX_SIZE*0.32, ft.y - HEX_SIZE*0.22);
+                        ctx.lineTo(ft.x + HEX_SIZE*0.12, ft.y + HEX_SIZE*0.08);
+                        ctx.lineTo(ft.x + HEX_SIZE*0.34, ft.y - HEX_SIZE*0.28);
+                        ctx.moveTo(ft.x + HEX_SIZE*0.12, ft.y + HEX_SIZE*0.08);
+                        ctx.lineTo(ft.x + HEX_SIZE*0.05, ft.y + HEX_SIZE*0.32);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+            }
             // Magma: ground the player has slid over stays charred and cracked forever, with
             // slow-pulsing molten cracks glowing through.
             if (lavaScorchedTiles.size) {
@@ -9276,6 +9384,7 @@
                     let s = item.obj;
                     ctx.save(); ctx.globalAlpha = Math.max(0, s.life / s.maxLife); ctx.fillStyle = s.color; ctx.strokeStyle = s.color;
                     if (s.type === 'ripple') { ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(s.x, s.y, 10 + (1 - s.life/s.maxLife)*35, 0, Math.PI*2); ctx.stroke(); } 
+                    else if (s.type === 'frostring') { ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(s.x, s.y, (1 - s.life/s.maxLife) * s.maxRadius, 0, Math.PI*2); ctx.stroke(); }
                     else { ctx.beginPath(); ctx.arc(s.x, s.y, 2 + (s.life/s.maxLife)*4, 0, Math.PI*2); ctx.fill(); }
                     ctx.restore();
                 }
@@ -9330,7 +9439,10 @@
                     // Corrupted Data: enemy projectiles render as their raw collision circle.
                     if (player.color === 'corrupted') { window.LegendaryStageEffects.corrupted.drawHitboxCircle(ctx, p.x, p.y, p.radius, '#ff003c', 'PRJ'); }
                     else {
-                        ctx.fillStyle = p.deflected ? '#ff477e' : '#ff0055'; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill();
+                        // Heart of Ice: caught-in-the-pulse projectiles read as chilled/blue
+                        // instead of their normal red, matching the slowed enemy tint below.
+                        let projFill = p.chilled ? '#bfe8f5' : (p.deflected ? '#ff477e' : '#ff0055');
+                        ctx.fillStyle = projFill; ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2); ctx.fill();
                         ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x-2, p.y-2, p.radius*0.4, 0, Math.PI*2); ctx.fill();
                     }
                 }
@@ -9432,6 +9544,8 @@
                     // Toxic Sludge: tint the sprite itself sickly green on top of its normal
                     // art, in addition to the aura glow drawn behind it above.
                     if (e.irradiated) drawIrradiatedTint(e.x, e.y, e.radius);
+                    // Heart of Ice: enemies caught in the pulse read as chilled/blue too.
+                    if (e.chilled) drawChilledTint(e.x, e.y, e.radius);
                     e.x = realEX; e.y = realEY;
                 }
                 else if (item.type === 'companion') {
@@ -9717,7 +9831,7 @@
             player.activePowerup = null; player.powerupDuration = 0; player.powerupTimeLeft = 0; player.spikesTimer = 0;
             projectiles = []; icicles = []; flameParticles = []; iceBlocks = [];
             splashes = []; leaves = []; screenShake = 0; hives = [];
-            runItems = {}; bossItemsAwarded = {}; companions = []; royalJellySlimes = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
+            runItems = {}; bossItemsAwarded = {}; companions = []; royalJellySlimes = []; frozenHazardTiles = []; playerTrail = []; shurikenSpin = 0; skeletonChests = []; plasmaBeamFX = [];
             player.plasmaTimer = 0; player.invulnerableTimer = 0; player.wilkshirianTimer = 0; player.spectreBoostTimer = 0; player.mythicTimers = {};
             player.lionRingCharge = 0; player.lionAimTimer = 0; player.lionAimMax = 0; player.lionAimAngle = 0; player.lionAimTargetAngle = 0;
             player.lionDashTimer = 0;
@@ -9991,7 +10105,7 @@
         let lastTime = performance.now();
         let accumulator = 0;
         const timeStep = 1000 / 60;
-        const maxCatchUpSteps = 15;
+        const maxCatchUpSteps = 5; // PERF: was 15 - fewer forced extra update() calls after a slow frame, avoids compounding lag
         // Fraction (0-1) of a timestep left in the accumulator after this frame's fixed updates
         // have run. draw() (SECTION 8) uses this to blend rendered positions between the
         // previous and current physics tick, which is what actually removes the jitter caused by
@@ -10307,6 +10421,7 @@
 
         function dismissBootScreen(){
             stopAttractDemo();
+            revealBootMusic();
             document.getElementById('title-screen').style.display = 'flex';
             bootScreenEl.classList.add('hide');
             bootScreenEl.addEventListener('transitionend', function(){
