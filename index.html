@@ -739,7 +739,7 @@
     <canvas id="gameCanvas"></canvas>
     <div id="town-hud">
         <div id="town-loc"></div><div id="town-coins"></div>
-        <div id="town-hint">Hold the screen to walk. Walk through doors to enter.<br>The bridges lead to the game zones!</div>
+        <div id="town-hint">Swipe to slide, just like in a level. Slide through doors to enter.<br>The bridges lead to the game zones!</div>
         <div id="town-deco-bar"></div>
         <button id="town-deco-btn">Decorate</button>
     </div>
@@ -10513,7 +10513,7 @@
         // the main game (draws into the shared offscreen `ctx`, then renderPixelated()). Replaces
         // the old title screen. gameState stays 'title' while in town so modals/pausing all work.
         // ==========================================
-        const TZ = 0.78, TF = 'bold 15px ' + (getComputedStyle(document.body).fontFamily || 'monospace');
+        const TZ = 1, TF = 'bold 15px ' + (getComputedStyle(document.body).fontFamily || 'monospace');
         const FURN = [
             { id: 'rug',   n: 'Cozy Rug',     p: 150, s: 0, c: '#c0392b' },
             { id: 'plant', n: 'Potted Plant', p: 60,  s: 1, c: '#2ecc71' },
@@ -10535,7 +10535,7 @@
         const PORTALS = [{ x: -997, y: 0, mode: 'classic', side: 'west', label: 'CLASSIC', col: '#5dffb0' }, { x: 997, y: 0, mode: 'endless', side: 'east', label: 'ENDLESS', col: '#c77dff' }];
         const TNAME = { town: 'Slime Town', home: 'Home', trophy: 'Trophy Hall', gacha: 'Gacha Shop', furn: 'Furniture Shop' };
         let townActive = false, townMap = null, tmap = null, tloc = 'home';
-        let tp = { x: 0, y: 0, vx: 0, vy: 0 }, tFade = 0, tFadeDir = 0, tFadeCb = null, tPtr = null, tBump = 0, tLast = 0;
+        let tp = { x: 0, y: 0, vx: 0, vy: 0, jx: 0, jy: 0 }, tFade = 0, tFadeDir = 0, tFadeCb = null, tPtr = null, tBump = 0, tLast = 0;
         let tDeco = false, tSel = null, tHit = null, tCam = { cx: 0, cy: 0 }, tScr = { x: 0, y: 0 }, lastRunSide = 'west', tHintShown = false;
         const tKeys = {}, tImg = {};
         const hh = (i, j) => (Math.imul(Math.round(i) + 7, 73856093) ^ Math.imul(Math.round(j) + 13, 19349663)) >>> 0;
@@ -10787,13 +10787,14 @@
             voidGrayscaleActive = false;
             const cx = b.x1 - b.x0 <= vw ? (b.x0 + b.x1) / 2 : Math.max(b.x0 + vw / 2, Math.min(b.x1 - vw / 2, tp.x));
             const cy = b.y1 - b.y0 <= vh ? (b.y0 + b.y1) / 2 : Math.max(b.y0 + vh / 2, Math.min(b.y1 - vh / 2, tp.y));
-            tCam = { cx, cy }; tScr.x = (tp.x - cx) * TZ + W / 2; tScr.y = (tp.y - 16 - cy) * TZ + H / 2;
-            camera.x = cx - W / 2; camera.y = cy - H / 2; camera.prevX = camera.x; camera.prevY = camera.y;
+            if (!tCamS) tCamS = { cx, cy }; tCamS.cx += (cx - tCamS.cx) * .15; tCamS.cy += (cy - tCamS.cy) * .15; if (tDeco) { tCamS.cx = cx; tCamS.cy = cy; }
+            tCam = { cx: tCamS.cx, cy: tCamS.cy }; const sx = tCamS.cx, sy = tCamS.cy; tScr.x = (tp.x - sx) * TZ + W / 2; tScr.y = (tp.y - 16 - sy) * TZ + H / 2;
+            camera.x = sx - W / 2; camera.y = sy - H / 2; camera.prevX = camera.x; camera.prevY = camera.y;
             c.setTransform(1, 0, 0, 1, 0, 0); c.save(); c.translate(-camera.x, -camera.y); drawSkyBackground(); c.restore();
-            c.setTransform(TZ, 0, 0, TZ, W / 2 - cx * TZ, H / 2 - cy * TZ); c.imageSmoothingEnabled = false;
+            c.setTransform(TZ, 0, 0, TZ, W / 2 - sx * TZ, H / 2 - sy * TZ); c.imageSmoothingEnabled = false;
             if (m.wall) { tGround(c, m, now); tWall(c, m); } else tGround(c, m, now);
             const L = m.things.slice();
-            L.push({ y: tp.y, fn: c2 => { c2.fillStyle = 'rgba(0,0,0,.25)'; c2.beginPath(); c2.ellipse(tp.x, tp.y, 18, 6, 0, 0, 7); c2.fill(); drawCharacterModel(tp.x, tp.y - 16, tp.vx * 3, tp.vy * 3, player.radius, player.color, Math.abs(tp.vx) + Math.abs(tp.vy) > 0.1, player.hat, c2); } });
+            L.push({ y: tp.y, fn: c2 => { c2.fillStyle = 'rgba(0,0,0,.25)'; c2.beginPath(); c2.ellipse(tp.x, tp.y, 18, 6, 0, 0, 7); c2.fill(); drawCharacterModel(tp.x, tp.y - 16, tp.vx, tp.vy, player.radius, player.color, Math.abs(tp.jx) + Math.abs(tp.jy) > 0, player.hat, c2); } });
             L.sort((a, z) => a.y - z.y); L.forEach(l => { c.save(); l.fn(c, now); c.restore(); });
             if (tDeco && tloc === 'home') { c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2; m.tiles.forEach(t => { if (t.t === 'i') { c.save(); c.translate(t.x, t.y); hexPath(c, 41); c.stroke(); c.restore(); } }); }
             c.setTransform(1, 0, 0, 1, 0, 0); if (tFade > 0) { c.fillStyle = 'rgba(0,0,0,' + tFade + ')'; c.fillRect(0, 0, W, H); }
@@ -10814,7 +10815,7 @@
             switchShopTab(tabs[0]); document.querySelector('#shop-modal .modal-header h2').textContent = title;
         }
         function tAct(a) {
-            tBump = performance.now() + 700; tPtr = null;
+            tBump = performance.now() + 700; tDrag = null;
             if (a === 'wardrobe') tShop(['skins', 'hats'], 'Wardrobe'); else if (a === 'gacha') tShop(['gacha'], 'Gacha Shop');
             else if (a === 'trophies') toggleAlmanac(); else if (a === 'furn') furnOpen();
         }
@@ -10823,7 +10824,7 @@
             tFadeCb = () => {
                 tloc = loc; tmap = loc === 'town' ? townMap : buildInt(loc); tDeco = false; tSel = null;
                 if (loc === 'town') { const b = BL.find(b => b.id === from); tp.x = b.x; tp.y = b.base + 36; } else { tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
-                tp.vx = tp.vy = 0; tHud();
+                tp.vx = tp.vy = tp.jx = tp.jy = 0; tCamS = null; tHud();
             };
         }
         function tRun(p) {
@@ -10834,15 +10835,23 @@
                 updateGameModeButton(); resetGame(); startGame();
             };
         }
-        function tStep(dt) {
-            let ax = (tKeys.ArrowRight || tKeys.d ? 1 : 0) - (tKeys.ArrowLeft || tKeys.a ? 1 : 0), ay = (tKeys.ArrowDown || tKeys.s ? 1 : 0) - (tKeys.ArrowUp || tKeys.w ? 1 : 0);
-            if (tPtr && !tDeco) { const dx = tPtr.x - tScr.x, dy = tPtr.y - tScr.y, d = Math.hypot(dx, dy); if (d > 16) { ax = dx / d; ay = dy / d; } }
-            const l = Math.hypot(ax, ay); if (l > 1) { ax /= l; ay /= l; }
-            const sp = 3.4 * dt; tp.vx = ax * sp; tp.vy = ay * sp; let hit = null;
-            if (ax) { if (tBlk(tp.x + ax * sp, tp.y)) hit = tHit; else tp.x += ax * sp; }
-            if (ay) { if (tBlk(tp.x, tp.y + ay * sp)) hit = tHit || hit; else tp.y += ay * sp; }
-            if (tloc === 'town') { tNpcStep(dt); const nw = performance.now(); (tmap.npcs || []).forEach(n => { if (Math.hypot(tp.x - n.x, tp.y - n.y) < 36 && nw > n.bub - 1500) { n.msg = n.say[(n.i = ((n.i || 0) + 1)) % n.say.length]; n.bub = nw + 2600; } }); (tmap.ias || []).forEach(it => { if (Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
+        let tAcc = 0, tCamS = null, tDrag = null;
+        function tPhys() {
+            const ax = (tKeys.ArrowRight || tKeys.d ? 1 : 0) - (tKeys.ArrowLeft || tKeys.a ? 1 : 0), ay = (tKeys.ArrowDown || tKeys.s ? 1 : 0) - (tKeys.ArrowUp || tKeys.w ? 1 : 0);
+            if (ax || ay) { const l = Math.hypot(ax, ay); tp.vx += ax / l * .5; tp.vy += ay / l * .5; }
+            const n = Math.max(1, Math.ceil(Math.hypot(tp.vx, tp.vy) / 6)); let hit = null;
+            for (let i = 0; i < n; i++) {
+                const sx = tp.vx / n, sy = tp.vy / n;
+                if (sx) { if (tBlk(tp.x + sx, tp.y)) { hit = tHit || hit; tp.vx *= -.3; } else tp.x += sx; }
+                if (sy) { if (tBlk(tp.x, tp.y + sy)) { hit = tHit || hit; tp.vy *= -.3; } else tp.y += sy; }
+            }
+            tp.vx *= friction; tp.vy *= friction;
+            if (!tDrag) { tp.jx *= -.8; tp.jy *= -.8; }
             if (hit && hit.act && performance.now() > tBump) tAct(hit.act);
+        }
+        function tStep(dt) {
+            tAcc += dt; let k = 0; while (tAcc >= 1 && k++ < 4) { tAcc -= 1; tPhys(); }
+            if (tloc === 'town') { tNpcStep(dt); const nw = performance.now(); (tmap.npcs || []).forEach(n => { if (Math.hypot(tp.x - n.x, tp.y - n.y) < 36 && nw > n.bub - 1500) { n.msg = n.say[(n.i = ((n.i || 0) + 1)) % n.say.length]; n.bub = nw + 2600; } }); (tmap.ias || []).forEach(it => { if (Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
             if (tFadeDir === 0 && tFade === 0) {
                 if (tloc === 'town') {
                     const b = BL.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
@@ -10872,7 +10881,7 @@
         function enterTown(first, side) {
             if (!townMap) townMap = buildTown();
             townActive = true; document.getElementById('town-hud').style.display = 'block'; document.getElementById('game-over-screen').style.display = 'none';
-            tDeco = false; tSel = null; tPtr = null; tp.vx = tp.vy = 0;
+            tDeco = false; tSel = null; tDrag = null; tCamS = null; tp.vx = tp.vy = tp.jx = tp.jy = 0;
             if (first) { tloc = 'home'; tmap = buildInt('home'); tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
             else { tloc = 'town'; tmap = townMap; tp.x = side === 'east' ? 887 : -887; tp.y = 0; }
             tFade = 1; tFadeDir = -1; tLast = performance.now(); tHud();
@@ -10884,7 +10893,7 @@
             FURN.forEach(f => { const n = furnFree(f.id); if (n <= 0) return; const b = document.createElement('button'); b.className = 'tchip' + (tSel === f.id ? ' on' : ''); b.textContent = f.n + ' x' + n; b.onclick = () => { tSel = tSel === f.id ? null : f.id; decoBar(); }; bar.appendChild(b); });
             if (!bar.children.length) bar.textContent = 'Nothing to place - buy furniture at the Furniture Shop! Tap placed items to pick them up.';
         }
-        document.getElementById('town-deco-btn').onclick = () => { tDeco = !tDeco; tSel = null; tPtr = null; document.getElementById('town-deco-btn').textContent = tDeco ? 'Done' : 'Decorate'; document.getElementById('town-deco-bar').style.display = tDeco ? 'flex' : 'none'; if (tDeco) decoBar(); };
+        document.getElementById('town-deco-btn').onclick = () => { tDeco = !tDeco; tSel = null; tDrag = null; document.getElementById('town-deco-btn').textContent = tDeco ? 'Done' : 'Decorate'; document.getElementById('town-deco-bar').style.display = tDeco ? 'flex' : 'none'; if (tDeco) decoBar(); };
         const tLogical = e => ({ x: e.clientX * canvas.width / window.innerWidth, y: e.clientY * canvas.height / window.innerHeight });
         displayCanvas.addEventListener('pointerdown', e => {
             if (!townActive) return; initAudio(); const P = tLogical(e);
@@ -10896,10 +10905,15 @@
                 else return;
                 saveHome(l); tmap = buildInt('home'); if (tSel && furnFree(tSel) <= 0) tSel = null; decoBar(); return;
             }
-            tPtr = P;
+            tDrag = { x: e.clientX, y: e.clientY };
         });
-        displayCanvas.addEventListener('pointermove', e => { if (tPtr) { const P = tLogical(e); tPtr.x = P.x; tPtr.y = P.y; } });
-        ['pointerup', 'pointercancel'].forEach(ev => window.addEventListener(ev, () => { tPtr = null; }));
+        window.addEventListener('pointermove', e => {
+            if (!tDrag || !townActive || tDeco) return;
+            const dx = e.clientX - tDrag.x, dy = e.clientY - tDrag.y, dir = userSettings.invert ? -1 : 1;
+            tp.vx += dx * sensitivity * dir; tp.vy += dy * sensitivity * dir; tp.jx = dx * sensitivity * dir; tp.jy = dy * sensitivity * dir;
+            tDrag.x = e.clientX; tDrag.y = e.clientY;
+        });
+        ['pointerup', 'pointercancel'].forEach(ev => window.addEventListener(ev, () => { tDrag = null; }));
         window.addEventListener('keydown', e => { if (!townActive) return; const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; tKeys[k] = 1; if (k.startsWith('Arrow')) e.preventDefault(); });
         window.addEventListener('keyup', e => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; delete tKeys[k]; });
 
