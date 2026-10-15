@@ -6318,14 +6318,14 @@
             initAudio();
             let unlockPopup = document.getElementById('unlock-popup');
             if (unlockPopup.classList.contains('pop-anim') && unlockPopupDismissible) { unlockPopup.classList.remove('pop-anim'); unlockPopupBusy = false; advanceUnlockPopupQueue(); return; }
-            if (gameState !== 'playing') return;
+            if (gameState !== 'playing' && !townActive) return;
             isDragging = true;
             const touch = e.touches ? e.touches[0] : e; lastX = touch.clientX; lastY = touch.clientY;
             pointerScreenX = touch.clientX;
             pointerScreenY = touch.clientY;
         }
         function handleMove(e) {
-            if (!isDragging || gameState !== 'playing') return;
+            if (!isDragging || (gameState !== 'playing' && !townActive) || (townActive && tDeco)) return;
             const touch = e.touches ? e.touches[0] : e;
             let dx = touch.clientX - lastX; let dy = touch.clientY - lastY;
             let dir = userSettings.invert ? -1 : 1;
@@ -6544,6 +6544,7 @@
             // between rendered frames (e.g. under throttled rAF / Low Power Mode).
             player.prevWorldX = player.worldX; player.prevWorldY = player.worldY;
             camera.prevX = camera.x; camera.prevY = camera.y;
+            if (townActive) townPre();
             for (let i = 0; i < enemies.length; i++) { enemies[i].prevX = enemies[i].x; enemies[i].prevY = enemies[i].y; }
             for (let i = 0; i < companions.length; i++) { companions[i].prevX = companions[i].x; companions[i].prevY = companions[i].y; }
             for (let i = 0; i < royalJellySlimes.length; i++) { royalJellySlimes[i].prevX = royalJellySlimes[i].x; royalJellySlimes[i].prevY = royalJellySlimes[i].y; }
@@ -6561,6 +6562,7 @@
                 // boot overlay has real gameplay visible behind it instead of a static scene.
                 if (gameState === 'title' && attractMode) updateAttractDemo();
                 player.worldX += player.vx; player.worldY += player.vy; player.vx *= friction; player.vy *= friction;
+                if (townActive) townCollide();
                 if (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) player.facing = Math.atan2(player.vy, player.vx);
                 if (!isDragging) { player.jiggleForceX *= -0.8; player.jiggleForceY *= -0.8; }
                 camera.x += (player.worldX - canvas.width / 2 - camera.x) * 0.15;
@@ -8982,6 +8984,7 @@
                 ctx.restore();
             }
 
+            if (townActive && tmap) townDrawBack(ctx, performance.now());
             rqCount = 0;
             // PERF: was a full trees.length scan checking isOnScreen on every tree every frame
             // (100-300+ trees). Reuses the same treeGrid built for physics collision to narrow
@@ -9013,6 +9016,7 @@
             for (let i = 0; i < docks.length; i++) { let dk = docks[i]; if (isOnScreen(dk.x + tiltX, dk.y + tiltY, cullBuffer)) pushRQ('dock', dk, dk.y - 5); }
             if (skinTrader && isOnScreen(skinTrader.x + tiltX, skinTrader.y + tiltY, cullBuffer)) pushRQ('skinTrader', skinTrader, skinTrader.y + 20);
             if (goldTrader && isOnScreen(goldTrader.x + tiltX, goldTrader.y + tiltY, cullBuffer)) pushRQ('goldTrader', goldTrader, goldTrader.y + 20);
+            if (townActive && tmap) { const TL = tmap.things; for (let i = 0; i < TL.length; i++) pushRQ('town', TL[i], TL[i].y); }
             pushRQ('player', player, player.worldY + (player.radius || 0));
             renderQueue.length = rqCount;
             renderQueue.sort(rqSortCompare);
@@ -9073,6 +9077,7 @@
             }
 
             renderQueue.forEach(item => {
+                if (item.type === 'town') { ctx.save(); item.obj.fn(ctx, performance.now()); ctx.restore(); return; }
                 let isWaterObj = item.type === 'splash' || item.type === 'icicle';
                 if (isWaterObj) { ctx.save(); ctx.translate(-tiltX, -tiltY); } // Undo tilt for water objects
 
@@ -10156,7 +10161,6 @@
         }
 
         function gameLoop(currentTime) {
-            if (townActive) { lastTime = currentTime; accumulator = 0; lastWallNow = performance.now(); townFrame(currentTime); requestAnimationFrame(gameLoop); return; }
             // Independent wall-clock measurement, taken fresh right here rather than trusting
             // the rAF-supplied timestamp, purely to compare the two against each other.
             let wallNow = performance.now();
@@ -10186,6 +10190,7 @@
             renderAlpha = Math.min(1, accumulator / timeStep);
 
             draw();
+            if (townActive && tFade > 0) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = 'rgba(0,0,0,' + tFade + ')'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
             let tDrawEnd = performance.now();
             renderPixelated();
             let tPixelateEnd = performance.now();
@@ -10535,7 +10540,7 @@
         const PORTALS = [{ x: -997, y: 0, mode: 'classic', side: 'west', label: 'CLASSIC', col: '#5dffb0' }, { x: 997, y: 0, mode: 'endless', side: 'east', label: 'ENDLESS', col: '#c77dff' }];
         const TNAME = { town: 'Slime Town', home: 'Home', trophy: 'Trophy Hall', gacha: 'Gacha Shop', furn: 'Furniture Shop' };
         let townActive = false, townMap = null, tmap = null, tloc = 'home';
-        let tp = { x: 0, y: 0, vx: 0, vy: 0, jx: 0, jy: 0 }, tFade = 0, tFadeDir = 0, tFadeCb = null, tPtr = null, tBump = 0, tLast = 0;
+        let tp = { get x() { return player.worldX; }, set x(v) { player.worldX = player.prevWorldX = v; }, get y() { return player.worldY; }, set y(v) { player.worldY = player.prevWorldY = v; }, get vx() { return player.vx; }, set vx(v) { player.vx = v; }, get vy() { return player.vy; }, set vy(v) { player.vy = v; }, get jx() { return player.jiggleForceX; }, set jx(v) { player.jiggleForceX = v; }, get jy() { return player.jiggleForceY; }, set jy(v) { player.jiggleForceY = v; } }, tFade = 0, tFadeDir = 0, tFadeCb = null, tPtr = null, tBump = 0, tLast = 0;
         let tDeco = false, tSel = null, tHit = null, tCam = { cx: 0, cy: 0 }, tScr = { x: 0, y: 0 }, lastRunSide = 'west', tHintShown = false;
         const tKeys = {}, tImg = {};
         const hh = (i, j) => (Math.imul(Math.round(i) + 7, 73856093) ^ Math.imul(Math.round(j) + 13, 19349663)) >>> 0;
@@ -10551,7 +10556,7 @@
         // ---- map helpers (tiles are real axial hexes, same math as the main game)
         function mkMap() { return { land: new Map(), tiles: [], obs: [], things: [], bb: null }; }
         function addTile(m, q, r, t, ex, far) {
-            const p = axialToPixel(q, r), ti = Object.assign({ q, r, x: p.x, y: p.y, t, isl: 0 }, ex || {});
+            const p = axialToPixel(q, r), ti = Object.assign({ q, r, x: p.x, y: p.y, t, isl: 0, type: 'land', element: null, hasFence: false, fenceCandidateDirs: null }, ex || {});
             if (!far) m.land.set(hexKey(q, r), ti); m.tiles.push(ti); return ti;
         }
         const addC = (m, x, y, r, act) => m.obs.push({ k: 'c', x, y, r, act });
@@ -10561,7 +10566,7 @@
             let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; m.tiles.forEach(t => { x0 = Math.min(x0, t.x); x1 = Math.max(x1, t.x); y0 = Math.min(y0, t.y); y1 = Math.max(y1, t.y); });
             m.bb = { x0: x0 - 90, x1: x1 + 90, y0: y0 - 90 - (ex || 0), y1: y1 + 110 };
             m.g = {}; m.tiles.forEach(t => (m.g[t.t] = m.g[t.t] || []).push(t));
-            m.lite = m.tiles.filter(t => hh(t.q, t.r) % 3 === 0 && !t.col); m.colored = m.tiles.filter(t => t.col); m.tint = m.tiles.filter(t => t.isl === 1); return m;
+            m.lite = m.tiles.filter(t => hh(t.q, t.r) % 3 === 0 && !t.col); m.colored = m.tiles.filter(t => t.col); m.tint = m.tiles.filter(t => t.isl === 1); m.landT = m.tiles.filter(t => t.t !== 'w'); return m;
         }
 
         function buildTown() {
@@ -10571,7 +10576,7 @@
             [-9, -8, -7, 7, 8, 9].forEach(q => addTile(m, q, 0, 'b'));
             const segs = [[-520, 0, 520, 0], [-250, -110, -250, 0], [250, -110, 250, 0], [-250, 170, -250, 216], [250, 170, 250, 216], [-250, 216, 250, 216], [0, 0, 0, 216]];
             m.tiles.forEach(t => { if (t.t !== 'g' || t.isl) return; if (hexD(t.q, t.r) <= 1) t.t = 's'; else if (segs.some(s => segD(t.x, t.y, ...s) < 44)) t.t = 'p'; });
-            const setT = (q, r, t) => { const ti = m.land.get(hexKey(q, r)); if (ti) ti.t = t; };
+            const setT = (q, r, t) => { const ti = m.land.get(hexKey(q, r)); if (ti) { ti.t = t; if (t === 'w') ti.type = 'hole'; } };
             [[-4, 4], [-3, 4], [-4, 5], [-3, 5]].forEach(([q, r]) => setT(q, r, 'w'));
             [[0, 4], [-1, 4], [-1, 5], [-2, 5]].forEach(([q, r]) => setT(q, r, 'f'));
             [[-3, -10], [-2, -10], [-3, -9], [4, -11], [5, -11], [-9, 9], [-8, 9], [-9, 10], [6, 10], [7, 9], [6, 9], [0, 13], [1, 13], [0, 14]].forEach(([q, r]) => addTile(m, q, r, 'g', {}, true));
@@ -10773,34 +10778,26 @@
         // ---- ground: identical recipe to the main game (dark underside, themed hex fill, edge outline)
         function tGround(c, m, now) {
             const TH = themes[0], F = { g: TH.bg, f: TH.bg, p: '#d9be85', s: '#b9bec9', b: '#b07a45', w: TH.hazard.color, i: '#c9955c', m: '#b03a3a' };
-            c.save(); c.translate(0, 18); c.fillStyle = TH.treeBase; pathHexUnion(c, m.tiles); c.fill(); c.restore();
-            c.lineJoin = 'round'; c.lineWidth = 6; c.strokeStyle = TH.hazard.edge; pathHexUnion(c, m.tiles); c.stroke();
-            for (const k in m.g) { c.fillStyle = F[k] || TH.bg; pathHexUnion(c, m.g[k]); c.fill(); }
+            for (const k in m.g) { if (k === 'g' || k === 'f' || k === 'w') continue; c.fillStyle = F[k] || TH.bg; pathHexUnion(c, m.g[k]); c.fill(); }
             m.colored.forEach(t => { c.fillStyle = t.col; pathHexUnion(c, [t]); c.fill(); });
             c.fillStyle = 'rgba(255,255,255,.07)'; pathHexUnion(c, m.lite); c.fill();
             if (m.tint.length) { c.fillStyle = 'rgba(80,30,130,.32)'; pathHexUnion(c, m.tint); c.fill(); }
-            c.lineWidth = 1.5; c.strokeStyle = 'rgba(0,0,0,.13)'; pathHexUnion(c, m.tiles); c.stroke();
+            c.lineWidth = 1.5; c.strokeStyle = 'rgba(0,0,0,.13)'; pathHexUnion(c, m.landT); c.stroke();
             (m.g.b || []).forEach(t => { c.save(); pathHexUnion(c, [t]); c.clip(); c.strokeStyle = '#7a4a24'; c.lineWidth = 3; for (let k = -36; k <= 36; k += 12) { c.beginPath(); c.moveTo(t.x + k, t.y - 50); c.lineTo(t.x + k, t.y + 50); c.stroke(); } c.restore(); });
         }
-        function tDraw(now) {
-            const c = ctx, W = canvas.width, H = canvas.height, m = tmap, vw = W / TZ, vh = H / TZ, b = m.bb;
-            voidGrayscaleActive = false;
-            const cx = b.x1 - b.x0 <= vw ? (b.x0 + b.x1) / 2 : Math.max(b.x0 + vw / 2, Math.min(b.x1 - vw / 2, tp.x));
-            const cy = b.y1 - b.y0 <= vh ? (b.y0 + b.y1) / 2 : Math.max(b.y0 + vh / 2, Math.min(b.y1 - vh / 2, tp.y));
-            if (!tCamS) tCamS = { cx, cy }; tCamS.cx += (cx - tCamS.cx) * .15; tCamS.cy += (cy - tCamS.cy) * .15; if (tDeco) { tCamS.cx = cx; tCamS.cy = cy; }
-            tCam = { cx: tCamS.cx, cy: tCamS.cy }; const sx = tCamS.cx, sy = tCamS.cy; tScr.x = (tp.x - sx) * TZ + W / 2; tScr.y = (tp.y - 16 - sy) * TZ + H / 2;
-            camera.x = sx - W / 2; camera.y = sy - H / 2; camera.prevX = camera.x; camera.prevY = camera.y;
-            c.setTransform(1, 0, 0, 1, 0, 0); c.save(); c.translate(-camera.x, -camera.y); drawSkyBackground(); c.restore();
-            c.setTransform(TZ, 0, 0, TZ, W / 2 - sx * TZ, H / 2 - sy * TZ); c.imageSmoothingEnabled = false;
-            if (m.wall) { tGround(c, m, now); tWall(c, m); } else tGround(c, m, now);
-            const L = m.things.slice();
-            L.push({ y: tp.y, fn: c2 => { c2.fillStyle = 'rgba(0,0,0,.25)'; c2.beginPath(); c2.ellipse(tp.x, tp.y, 18, 6, 0, 0, 7); c2.fill(); drawCharacterModel(tp.x, tp.y - 16, tp.vx, tp.vy, player.radius, player.color, Math.abs(tp.jx) + Math.abs(tp.jy) > 0, player.hat, c2); } });
-            L.sort((a, z) => a.y - z.y); L.forEach(l => { c.save(); l.fn(c, now); c.restore(); });
+        function townDrawBack(c, now) {
+            const m = tmap; tGround(c, m, now); if (m.wall) tWall(c, m);
             if (tDeco && tloc === 'home') { c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2; m.tiles.forEach(t => { if (t.t === 'i') { c.save(); c.translate(t.x, t.y); hexPath(c, 41); c.stroke(); c.restore(); } }); }
-            c.setTransform(1, 0, 0, 1, 0, 0); if (tFade > 0) { c.fillStyle = 'rgba(0,0,0,' + tFade + ')'; c.fillRect(0, 0, W, H); }
-            renderPixelated();
         }
-
+        // Load a town/interior layout into the game's real level globals so the game's own draw()/update() run it
+        function tApply(m) {
+            hexTiles = m.land; landHexList = m.tiles.filter(t => t.type !== 'hole'); holeHexList = m.tiles.filter(t => t.type === 'hole'); borderHexList = [];
+            items = []; enemies = []; trees = []; hives = []; decorations = []; projectiles = []; icicles = []; iceBlocks = []; flameParticles = []; leaves = []; splashes = []; powerups = [];
+            chest = null; fishingScene = null; skeletonChests = []; surviveChests = []; skinTrader = null; goldTrader = null; docks = []; fences = []; companions = []; royalJellySlimes = []; acidTrail = [];
+            goal.active = false; currentTheme = themes[0]; document.body.style.setProperty('--bg-color', currentTheme.bg);
+            buildLandTileGrid(); buildTreeGrid();
+        }
+        function tSnap() { camera.x = camera.prevX = player.worldX - canvas.width / 2; camera.y = camera.prevY = player.worldY - canvas.height / 2; }
         // ---- movement / interaction
         function tBlk(x, y) {
             const m = tmap;
@@ -10815,49 +10812,56 @@
             switchShopTab(tabs[0]); document.querySelector('#shop-modal .modal-header h2').textContent = title;
         }
         function tAct(a) {
-            tBump = performance.now() + 700; tDrag = null;
+            tBump = performance.now() + 700;
             if (a === 'wardrobe') tShop(['skins', 'hats'], 'Wardrobe'); else if (a === 'gacha') tShop(['gacha'], 'Gacha Shop');
             else if (a === 'trophies') toggleAlmanac(); else if (a === 'furn') furnOpen();
         }
         function tGo(loc, from) {
             if (tFadeDir || tFade) return; tFadeDir = 1;
             tFadeCb = () => {
-                tloc = loc; tmap = loc === 'town' ? townMap : buildInt(loc); tDeco = false; tSel = null;
+                tloc = loc; tmap = loc === 'town' ? townMap : buildInt(loc); tApply(tmap); tDeco = false; tSel = null;
                 if (loc === 'town') { const b = BL.find(b => b.id === from); tp.x = b.x; tp.y = b.base + 36; } else { tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
-                tp.vx = tp.vy = tp.jx = tp.jy = 0; tCamS = null; tHud();
+                tp.vx = tp.vy = 0; tp.jx = tp.jy = 0; tSnap(); tHud();
             };
         }
         function tRun(p) {
             if (tFadeDir || tFade) return; lastRunSide = p.side; tFadeDir = 1;
-            tFadeCb = () => {
+            tFadeCb = () => setTimeout(() => {
                 townActive = false; document.getElementById('town-hud').style.display = 'none';
-                if (gameMode !== p.mode) { gameMode = p.mode; storage.set('landSlidersGameMode', p.mode); levelPreGenerated = false; }
-                updateGameModeButton(); resetGame(); startGame();
-            };
+                if (gameMode !== p.mode) { gameMode = p.mode; storage.set('landSlidersGameMode', p.mode); }
+                levelPreGenerated = false; updateGameModeButton(); resetGame(); startGame();
+            }, 0);
         }
-        let tAcc = 0, tCamS = null, tDrag = null;
-        function tPhys() {
-            const ax = (tKeys.ArrowRight || tKeys.d ? 1 : 0) - (tKeys.ArrowLeft || tKeys.a ? 1 : 0), ay = (tKeys.ArrowDown || tKeys.s ? 1 : 0) - (tKeys.ArrowUp || tKeys.w ? 1 : 0);
-            if (ax || ay) { const l = Math.hypot(ax, ay); tp.vx += ax / l * .5; tp.vy += ay / l * .5; }
-            const n = Math.max(1, Math.ceil(Math.hypot(tp.vx, tp.vy) / 6)); let hit = null;
+        function townCollide() {
+            const px = player.prevWorldX, py = player.prevWorldY, dx = player.worldX - px, dy = player.worldY - py, n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 6)); let x = px, y = py, hit = null;
             for (let i = 0; i < n; i++) {
-                const sx = tp.vx / n, sy = tp.vy / n;
-                if (sx) { if (tBlk(tp.x + sx, tp.y)) { hit = tHit || hit; tp.vx *= -.3; } else tp.x += sx; }
-                if (sy) { if (tBlk(tp.x, tp.y + sy)) { hit = tHit || hit; tp.vy *= -.3; } else tp.y += sy; }
+                const sx = dx / n, sy = dy / n;
+                if (sx) { if (tBlk(x + sx, y)) { hit = tHit || hit; player.vx *= .6; } else x += sx; }
+                if (sy) { if (tBlk(x, y + sy)) { hit = tHit || hit; player.vy *= .6; } else y += sy; }
             }
-            tp.vx *= friction; tp.vy *= friction;
-            if (!tDrag) { tp.jx *= -.8; tp.jy *= -.8; }
+            player.worldX = x; player.worldY = y;
             if (hit && hit.act && performance.now() > tBump) tAct(hit.act);
         }
-        function tStep(dt) {
-            tAcc += dt; let k = 0; while (tAcc >= 1 && k++ < 4) { tAcc -= 1; tPhys(); }
-            if (tloc === 'town') { tNpcStep(dt); const nw = performance.now(); (tmap.npcs || []).forEach(n => { if (Math.hypot(tp.x - n.x, tp.y - n.y) < 36 && nw > n.bub - 1500) { n.msg = n.say[(n.i = ((n.i || 0) + 1)) % n.say.length]; n.bub = nw + 2600; } }); (tmap.ias || []).forEach(it => { if (Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
-            if (tFadeDir === 0 && tFade === 0) {
-                if (tloc === 'town') {
-                    const b = BL.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
-                    if (b) tGo(b.id); else if (p) tRun(p);
-                } else { const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)); if (t && t.t === 'm') tGo('town', tloc); }
+        function townPre() {
+            const modalOpen = [...document.querySelectorAll('.modal')].some(m => m.style.display === 'block');
+            if (modalOpen || tFadeDir === 1) { player.vx = 0; player.vy = 0; }
+            else { const ax = (tKeys.ArrowRight || tKeys.d ? 1 : 0) - (tKeys.ArrowLeft || tKeys.a ? 1 : 0), ay = (tKeys.ArrowDown || tKeys.s ? 1 : 0) - (tKeys.ArrowUp || tKeys.w ? 1 : 0); if (ax || ay) { const l = Math.hypot(ax, ay); player.vx += ax / l * .5; player.vy += ay / l * .5; } }
+            if (tFadeDir) {
+                tFade += tFadeDir * 0.07;
+                if (tFadeDir > 0 && tFade >= 1) { tFade = 1; const cb = tFadeCb; tFadeCb = null; if (cb) cb(); if (townActive) tFadeDir = -1; else { tFadeDir = 0; tFade = 0; return; } }
+                else if (tFadeDir < 0 && tFade <= 0) { tFade = 0; tFadeDir = 0; }
             }
+            if (!modalOpen && tFadeDir !== 1) {
+                if (tloc === 'town') { tNpcStep(1); const nw = performance.now(); (tmap.npcs || []).forEach(n => { if (Math.hypot(tp.x - n.x, tp.y - n.y) < 36 && nw > n.bub - 1500) { n.msg = n.say[(n.i = ((n.i || 0) + 1)) % n.say.length]; n.bub = nw + 2600; } }); (tmap.ias || []).forEach(it => { if (Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
+                if (tFadeDir === 0 && tFade === 0) {
+                    if (tloc === 'town') {
+                        const b = BL.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
+                        if (b) tGo(b.id); else if (p) tRun(p);
+                    } else { const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)); if (t && t.t === 'm') tGo('town', tloc); }
+                }
+            }
+            const ce = document.getElementById('town-coins'), cs = String(totalCoins);
+            if (ce.dataset.v !== cs) { ce.dataset.v = cs; ce.innerHTML = '<img class="icon-img" style="width:1em;height:1em;vertical-align:-2px" src="' + iconDataURL('coin', 22) + '" alt=""> ' + cs; }
         }
         function tHud() {
             document.getElementById('town-loc').textContent = TNAME[tloc];
@@ -10865,26 +10869,13 @@
             document.getElementById('town-deco-bar').style.display = 'none';
             if (!tHintShown) { tHintShown = true; const h = document.getElementById('town-hint'); h.style.display = 'block'; setTimeout(() => { h.style.display = 'none'; }, 7000); }
         }
-        function townFrame(now) {
-            const dt = Math.min(2, (now - tLast) / 16.67) || 1; tLast = now;
-            const modalOpen = [...document.querySelectorAll('.modal')].some(m => m.style.display === 'block');
-            if (!modalOpen && tFadeDir !== 1) tStep(dt);
-            if (tFadeDir) {
-                tFade += tFadeDir * 0.07 * dt;
-                if (tFadeDir > 0 && tFade >= 1) { tFade = 1; const cb = tFadeCb; tFadeCb = null; if (cb) cb(); if (townActive) tFadeDir = -1; else { tFadeDir = 0; tFade = 0; return; } }
-                else if (tFadeDir < 0 && tFade <= 0) { tFade = 0; tFadeDir = 0; }
-            }
-            tDraw(now);
-            const ce = document.getElementById('town-coins'), s = String(totalCoins);
-            if (ce.dataset.v !== s) { ce.dataset.v = s; ce.innerHTML = '<img class="icon-img" style="width:1em;height:1em;vertical-align:-2px" src="' + iconDataURL('coin', 22) + '" alt=""> ' + s; }
-        }
         function enterTown(first, side) {
             if (!townMap) townMap = buildTown();
             townActive = true; document.getElementById('town-hud').style.display = 'block'; document.getElementById('game-over-screen').style.display = 'none';
-            tDeco = false; tSel = null; tDrag = null; tCamS = null; tp.vx = tp.vy = tp.jx = tp.jy = 0;
+            tDeco = false; tSel = null; tp.vx = tp.vy = 0; tp.jx = tp.jy = 0;
             if (first) { tloc = 'home'; tmap = buildInt('home'); tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
             else { tloc = 'town'; tmap = townMap; tp.x = side === 'east' ? 887 : -887; tp.y = 0; }
-            tFade = 1; tFadeDir = -1; tLast = performance.now(); tHud();
+            tApply(tmap); tSnap(); tFade = 1; tFadeDir = -1; tHud();
         }
 
         // ---- Decorate mode (home): pick an owned piece, tap a hex floor tile to place it, tap a placed piece to pick it up
@@ -10893,27 +10884,19 @@
             FURN.forEach(f => { const n = furnFree(f.id); if (n <= 0) return; const b = document.createElement('button'); b.className = 'tchip' + (tSel === f.id ? ' on' : ''); b.textContent = f.n + ' x' + n; b.onclick = () => { tSel = tSel === f.id ? null : f.id; decoBar(); }; bar.appendChild(b); });
             if (!bar.children.length) bar.textContent = 'Nothing to place - buy furniture at the Furniture Shop! Tap placed items to pick them up.';
         }
-        document.getElementById('town-deco-btn').onclick = () => { tDeco = !tDeco; tSel = null; tDrag = null; document.getElementById('town-deco-btn').textContent = tDeco ? 'Done' : 'Decorate'; document.getElementById('town-deco-bar').style.display = tDeco ? 'flex' : 'none'; if (tDeco) decoBar(); };
+        document.getElementById('town-deco-btn').onclick = () => { tDeco = !tDeco; tSel = null; document.getElementById('town-deco-btn').textContent = tDeco ? 'Done' : 'Decorate'; document.getElementById('town-deco-bar').style.display = tDeco ? 'flex' : 'none'; if (tDeco) decoBar(); };
         const tLogical = e => ({ x: e.clientX * canvas.width / window.innerWidth, y: e.clientY * canvas.height / window.innerHeight });
         displayCanvas.addEventListener('pointerdown', e => {
             if (!townActive) return; initAudio(); const P = tLogical(e);
             if (tDeco && tloc === 'home') {
-                const q = pixelToAxial((P.x - canvas.width / 2) / TZ + tCam.cx, (P.y - canvas.height / 2) / TZ + tCam.cy), t = tmap.land.get(hexKey(q.q, q.r)); if (!t || t.t !== 'i') return;
+                const q = pixelToAxial(P.x + camera.x, P.y + camera.y), t = tmap.land.get(hexKey(q.q, q.r)); if (!t || t.t !== 'i') return;
                 const l = homeList(), k = l.findIndex(o => o.q === t.q && o.r === t.r);
                 if (k >= 0) l.splice(k, 1);
                 else if (tSel && furnFree(tSel) > 0) { if (FURN_BY[tSel].s && Math.hypot(tp.x - t.x, tp.y - t.y) < 55) return; l.push({ id: tSel, q: t.q, r: t.r }); }
                 else return;
                 saveHome(l); tmap = buildInt('home'); if (tSel && furnFree(tSel) <= 0) tSel = null; decoBar(); return;
             }
-            tDrag = { x: e.clientX, y: e.clientY };
         });
-        window.addEventListener('pointermove', e => {
-            if (!tDrag || !townActive || tDeco) return;
-            const dx = e.clientX - tDrag.x, dy = e.clientY - tDrag.y, dir = userSettings.invert ? -1 : 1;
-            tp.vx += dx * sensitivity * dir; tp.vy += dy * sensitivity * dir; tp.jx = dx * sensitivity * dir; tp.jy = dy * sensitivity * dir;
-            tDrag.x = e.clientX; tDrag.y = e.clientY;
-        });
-        ['pointerup', 'pointercancel'].forEach(ev => window.addEventListener(ev, () => { tDrag = null; }));
         window.addEventListener('keydown', e => { if (!townActive) return; const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; tKeys[k] = 1; if (k.startsWith('Arrow')) e.preventDefault(); });
         window.addEventListener('keyup', e => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; delete tKeys[k]; });
 
