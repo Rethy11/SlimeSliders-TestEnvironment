@@ -10804,7 +10804,7 @@
         }
         function tFit(c, txt, maxW, px) { const fam = TF.split('px ')[1]; let sz = px; for (; sz > 7; sz--) { c.font = 'bold ' + sz + 'px ' + fam; if (c.measureText(txt).width <= maxW) return; } c.font = 'bold 7px ' + fam; }
         function tBubble(c, x, y, it) { if (!(it.bub > performance.now())) return; c.save(); tFit(c, it.msg, 220, 13); c.textAlign = 'center'; const w = c.measureText(it.msg).width + 26; c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#fff'; c.beginPath(); c.roundRect(x - w / 2, y - 32, w, 32, 8); c.fill(); c.stroke(); c.beginPath(); c.moveTo(x - 5, y); c.lineTo(x, y + 7); c.lineTo(x + 5, y); c.fill(); c.fillStyle = '#2b2d42'; c.fillText(it.msg, x, y - 11); c.restore(); }
-        function tResident(c, n, now) { c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(n.x, n.y + 22, 20, 6, 0, 0, 7); c.fill(); drawCharacterModel(n.x, n.y + 4 + Math.sin(now / 300 + n.t) * 2, n.vx || 0, n.vy || 0, 18, n.skin, !!(n.vx || n.vy), n.hat, c); c.save(); c.font = 'bold 9px ' + TF.split('px ')[1]; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#fff'; c.strokeText(n.n, n.x, n.y - 30); c.fillText(n.n, n.x, n.y - 30); c.restore(); tBubble(c, n.x, n.y - 38, n); }
+        function tResident(c, n, now) { c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(n.x, n.y + 22, 20, 6, 0, 0, 7); c.fill(); drawCharacterModel(n.x, n.y + 4 + Math.sin(now / 300 + n.t) * 2, n.vx || 0, n.vy || 0, 18, n.skin, !!(n.vx || n.vy), n.hat, c); tBubble(c, n.x, n.y - 38, n); }
         function tMail(c, x, y) { c.save(); c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#6b3f1d'; c.fillRect(x - 3, y - 20, 6, 28); c.strokeRect(x - 3, y - 20, 6, 28); c.fillStyle = '#e74c3c'; c.beginPath(); c.roundRect(x - 13, y - 38, 26, 18, [10, 10, 2, 2]); c.fill(); c.stroke(); c.fillStyle = '#ffd54f'; c.fillRect(x + 10, y - 46, 4, 12); c.restore(); }
         function tSign(c, x, y) { c.save(); c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#6b3f1d'; c.fillRect(x - 3, y - 34, 6, 42); c.strokeRect(x - 3, y - 34, 6, 42); c.fillStyle = '#f4e3b2'; c.beginPath(); c.moveTo(x - 24, y - 52); c.lineTo(x + 18, y - 52); c.lineTo(x + 26, y - 44); c.lineTo(x + 18, y - 36); c.lineTo(x - 24, y - 36); c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#c0392b'; c.fillRect(x - 16, y - 46, 26, 3); c.fillRect(x - 16, y - 41, 18, 3); c.restore(); }
         function tWell(c, x, y, now) { c.save(); c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.ellipse(x, y + 12, 28, 9, 0, 0, 7); c.fill(); c.fillStyle = '#9aa0ad'; c.beginPath(); c.roundRect(x - 22, y - 14, 44, 26, 8); c.fill(); c.stroke(); c.fillStyle = '#3b6ea8'; c.beginPath(); c.ellipse(x, y - 14, 18, 6, 0, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#8d5524'; c.fillRect(x - 22, y - 44, 5, 32); c.fillRect(x + 17, y - 44, 5, 32); c.strokeRect(x - 22, y - 44, 5, 32); c.strokeRect(x + 17, y - 44, 5, 32); c.fillStyle = '#e0524d'; c.beginPath(); c.moveTo(x - 30, y - 42); c.lineTo(x, y - 62); c.lineTo(x + 30, y - 42); c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#bbb'; c.fillRect(x - 3, y - 30 + Math.sin(now / 600) * 3, 6, 8); c.restore(); }
@@ -10905,16 +10905,16 @@
             if (tDeco && tloc === 'home') { c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2; m.tiles.forEach(t => { if (t.t === 'i') { c.save(); c.translate(t.x, t.y); hexPath(c, 41); c.stroke(); c.restore(); } }); }
         }
         // Load a town/interior layout into the game's real level globals so the game's own draw()/update() run it
-        let tDlgOpen = false, tDlgTimer = 0;
+        let tDlgOpen = false, tDlgTimer = 0, tDlgMsg = '', tDlgTyping = false;
         function tOpenDlg(n) {
             n.armed = false; n.w = 400; n.i = n.i === undefined ? 0 : n.i + 1; const msg = n.say[n.i % n.say.length];
             const $ = id => document.getElementById(id), box = $('town-dlg'), cv = $('dlg-face'), cx = cv.getContext('2d');
             $('dlg-name').textContent = n.n; $('dlg-text').textContent = ''; cx.clearRect(0, 0, 80, 80); drawCharacterModel(40, 46, 0, 0, 22, n.skin, false, n.hat, cx);
-            box.style.display = 'flex'; tDlgOpen = true; player.vx = player.vy = 0; let k = 0; clearInterval(tDlgTimer);
-            tDlgTimer = setInterval(() => { k++; $('dlg-text').textContent = msg.slice(0, k); if (k >= msg.length) clearInterval(tDlgTimer); }, 28);
+            box.style.display = 'flex'; tDlgOpen = true; player.vx = player.vy = 0; let k = 0; clearInterval(tDlgTimer); tDlgMsg = msg; tDlgTyping = true;
+            tDlgTimer = setInterval(() => { k++; $('dlg-text').textContent = msg.slice(0, k); if (k >= msg.length) { clearInterval(tDlgTimer); tDlgTyping = false; } }, 28);
         }
-        function tCloseDlg() { clearInterval(tDlgTimer); document.getElementById('town-dlg').style.display = 'none'; tDlgOpen = false; }
-        window.addEventListener('pointerdown', e => { if (tDlgOpen) { tCloseDlg(); e.stopPropagation(); e.preventDefault(); } }, true);
+        function tCloseDlg() { clearInterval(tDlgTimer); tDlgTyping = false; document.getElementById('town-dlg').style.display = 'none'; tDlgOpen = false; }
+        window.addEventListener('pointerdown', e => { if (tDlgOpen) { if (tDlgTyping) { clearInterval(tDlgTimer); tDlgTyping = false; document.getElementById('dlg-text').textContent = tDlgMsg; } else tCloseDlg(); e.stopPropagation(); e.preventDefault(); } }, true);
         function tApply(m) {
             tCloseDlg();
             hexTiles = m.land; landHexList = m.tiles.filter(t => t.type !== 'hole'); holeHexList = m.tiles.filter(t => t.type === 'hole'); borderHexList = [];
