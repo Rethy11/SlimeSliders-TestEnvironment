@@ -731,7 +731,7 @@
         </div>
         <div class="menu-buttons">
             <button id="go-play-again" class="menu-btn" style="background: var(--accent)">Play Again</button>
-            <button id="go-main-menu" class="menu-btn" style="background: #4caf50;">Main Menu</button>
+            <button id="go-main-menu" class="menu-btn" style="background: #4caf50;">Home</button>
             <button id="go-shop-btn" class="menu-btn" style="background: #ffd700; color: #000;">Shop</button>
         </div>
     </div>
@@ -922,8 +922,8 @@
         <h2 id="portal-title"></h2>
         <p id="portal-best" style="margin-bottom:22px;font-size:.8rem;"></p>
         <div style="display:flex;gap:12px;">
-            <button id="portal-cancel" class="menu-btn" style="flex:1;min-width:0;margin:0;background:#8d99ae;">Cancel</button>
-            <button id="portal-enter" class="menu-btn" style="flex:1;min-width:0;margin:0;background:var(--accent);">Enter</button>
+            <button id="portal-cancel" class="menu-btn" style="flex:1;min-width:0;margin:0;padding:18px 6px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1;background:#8d99ae;">Cancel</button>
+            <button id="portal-enter" class="menu-btn" style="flex:1;min-width:0;margin:0;padding:18px 6px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1;background:var(--accent);">Enter</button>
         </div>
     </div>
 
@@ -10529,13 +10529,21 @@
         const FURN = [
             { id: 'rug',   n: 'Cozy Rug',     p: 150, s: 0, c: '#c0392b' },
             { id: 'plant', n: 'Potted Plant', p: 60,  s: 1, c: '#2ecc71' },
-            { id: 'chair', n: 'Wood Chair',   p: 80,  s: 1, c: '#a1662f' },
+            { id: 'chair', n: 'Wood Chair',   p: 80,  s: 0, c: '#a1662f' },
             { id: 'lamp',  n: 'Floor Lamp',   p: 100, s: 1, c: '#f1c40f' },
             { id: 'table', n: 'Table',        p: 140, s: 1, c: '#8d5524' },
             { id: 'sofa',  n: 'Sofa',         p: 220, s: 1, c: '#e74c8c' },
             { id: 'shelf', n: 'Bookshelf',    p: 260, s: 1, c: '#6d4c41' },
             { id: 'tv',    n: 'TV',           p: 350, s: 1, c: '#2c3e50' },
-            { id: 'tank',  n: 'Fish Tank',    p: 500, s: 1, c: '#1abc9c' }
+            { id: 'tank',  n: 'Fish Tank',    p: 500, s: 1, c: '#1abc9c' },
+            { id: 'bed',   n: 'Bed',          p: 300, s: 0, c: '#8d5524' },
+            { id: 'mirror', n: 'Wall Mirror', p: 200, s: 0, w: 1 },
+            { id: 'window', n: 'Window',      p: 120, s: 0, w: 1 },
+            { id: 'art_heart', n: 'Heart Picture', p: 90, s: 0, w: 1, k: 'heart' },
+            { id: 'art_sun',   n: 'Sun Picture',   p: 90, s: 0, w: 1, k: 'sun' },
+            { id: 'art_slime', n: 'Slime Picture', p: 90, s: 0, w: 1, k: 'slime' },
+            { id: 'art_tree',  n: 'Tree Picture',  p: 90, s: 0, w: 1, k: 'tree' },
+            { id: 'art_star',  n: 'Star Picture',  p: 90, s: 0, w: 1, k: 'star' }
         ];
         const FURN_BY = Object.fromEntries(FURN.map(f => [f.id, f]));
         const BL = [
@@ -10554,7 +10562,31 @@
         const furnOwned = id => parseInt(storage.get('furn_' + id) || 0);
         const homeList = () => { try { return JSON.parse(storage.get('homeFurn') || '[]'); } catch (e) { return []; } };
         const saveHome = l => storage.set('homeFurn', JSON.stringify(l));
-        const furnFree = id => furnOwned(id) - homeList().filter(o => o.id === id).length;
+        const homeRem = () => { try { return JSON.parse(storage.get('homeRem') || '[]'); } catch (e) { return []; } };
+        const HOME_SEED = [['rug', 3, 2], ['chair', 2, 3], ['chair', 4, 3], ['plant', 6, 0], ['plant', 0, 3], ['lamp', 6, 2]];
+        function seedHome() {
+            if (storage.get('homeSeeded2')) return;
+            const rem = homeRem(), l = homeList(), add = (k, n) => storage.set('furn_' + k, furnOwned(k) + n);
+            l.forEach(o => { if (o.d) { delete o.d; add(o.id, 1); } });
+            if (!storage.get('homeSeeded')) HOME_SEED.forEach(([k, c, r]) => { const q = -Math.floor(r / 2) + c; if (!l.some(o => o.q === q && o.r === r)) { l.push({ id: k, q, r }); add(k, 1); } });
+            [['bed', { q: 0, r: 0 }, 'bed'], ['mirror', { x: 426 }, 'mirror'], ['window', { x: 104 }, 'win1'], ['art_heart', { x: 20 }, 'art1'], ['art_sun', { x: 250 }, 'art2']].forEach(([k, pos, rid]) => { add(k, 1); if (!rem.includes(rid)) l.push(Object.assign({ id: k }, pos)); });
+            saveHome(l); storage.set('homeRem', '[]'); storage.set('homeSeeded', '1'); storage.set('homeSeeded2', '1');
+        }
+        // pixel-art wall pictures
+        const PIXPAL = { r: '#e74c3c', w: '#fff', k: '#2b2d42', g: '#2ecc71', y: '#ffd54f', b: '#4aa8f0', p: '#ff8fc0', n: '#8d5524' };
+        const PIX = {
+            heart: ['.rr...rr.', 'rrrr.rrrr', 'rwrrrrrrr', 'rrrrrrrrr', '.rrrrrrr.', '..rrrrr..', '...rrr...', '....r....'],
+            slime: ['.........', '...bbb...', '..bbbbb..', '.bbwbwbb.', '.bbkbkbb.', '.bbbbbbb.', 'bbbbbbbbb', '.........'],
+            tree: ['...ggg...', '..ggggg..', '.ggggggg.', '..ggggg..', '.ggggggg.', '...nnn...', '...nnn...', '...nnn...'],
+            star: ['....y....', '....y....', 'yyyyyyyyy', '.yyyyyyy.', '..yyyyy..', '..yy.yy..', '.yy...yy.', '.y.....y.'],
+            sun: ['y..y.y..y', '.y.yyy.y.', '..yyyyy..', 'yyyyyyyyy', '..yyyyy..', '.y.yyy.y.', 'y..y.y..y', '.........']
+        };
+        function tPix(c, x, k) {
+            const G = PIX[k], u = 5, w = G[0].length * u, h = G.length * u, y = -112 - h / 2; c.save(); c.lineWidth = 4; c.strokeStyle = '#2b2d42';
+            c.fillStyle = '#7a4b22'; c.fillRect(x - w / 2 - 6, y - 6, w + 12, h + 12); c.strokeRect(x - w / 2 - 6, y - 6, w + 12, h + 12); c.fillStyle = '#f6efd8'; c.fillRect(x - w / 2, y, w, h);
+            G.forEach((row, j) => [...row].forEach((ch, i) => { const col = PIXPAL[ch]; if (col) { c.fillStyle = col; c.fillRect(x - w / 2 + i * u, y + j * u, u, u); } })); c.restore();
+        }
+        const furnFree = id => furnOwned(id) - homeList().filter(o => o.id === id && !o.d).length;
         const timg = k => tImg[k] || (tImg[k] = Object.assign(new Image(), { src: iconDataURL(k, 48) }));
         const hexD = (q, r) => Math.max(Math.abs(q), Math.abs(r), Math.abs(-q - r));
         const segD = (px, py, a, b, c, d) => { const dx = c - a, dy = d - b, l = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - a) * dx + (py - b) * dy) / l)); return Math.hypot(px - a - t * dx, py - b - t * dy); };
@@ -10643,35 +10675,57 @@
             m.T = T; m.exitT = m.land.get(hexKey(1, 4)); m.exitT.t = 'm'; m.exitT.col = null; m.spawn = T(3, 3);
             const W = { x0: T(0, 0).x - 46, x1: T(6, 0).x + 46 }; m.wall = Object.assign(W, { col: { home: '#ecd9b0', trophy: '#e4e0f0', gacha: '#fbd9e8', furn: '#d4e4f7' }[id], dado: { home: '#8d6038', trophy: '#7a6aa8', gacha: '#c94b8c', furn: '#3a6ab0' }[id] });
             const mid = (T(0, 0).x + T(6, 0).x) / 2;
+            const D = (k, c, r) => { const q = T(c, r), F = FURN_BY[k]; if (F.s) addC(m, q.x, q.y + 6, 26); addT(m, F.s ? q.y + 24 : -5e8, cc => drawFurn(cc, F, q.x, q.y, 1)); };
             if (id === 'home') {
-                const B = T(0, 0); addR(m, B.x - 44, B.y - 24, 150, 120); addT(m, B.y + 96, c => tBed(c, B.x + 30, B.y + 34));
-                const mx = T(5, 0).x + 10; m.wallFn = c => tMirror(c, mx, -88); addR(m, mx - 60, -30, 120, 50);
-                homeList().forEach(f => { const F = FURN_BY[f.id], t = m.land.get(hexKey(f.q, f.r)); if (!F || !t) return; if (F.s) addC(m, t.x, t.y + 6, 26); addT(m, F.s ? t.y + 24 : -5e8, c => drawFurn(c, F, t.x, t.y, 1)); });
+                seedHome(); m.defs = []; m.wins = []; m.art = []; const DF = (idx, x, y, w, h) => m.defs.push({ idx, x, y, w, h }), mirs = [];
+                homeList().forEach((f, idx) => {
+                    const F = FURN_BY[f.id]; if (!F) return;
+                    if (F.w) {
+                        if (f.id === 'window') { m.wins.push(f.x); DF(idx, f.x - 36, -140, 72, 62); }
+                        else if (f.id === 'mirror') { mirs.push(f.x); addR(m, f.x - 60, -30, 120, 50); DF(idx, f.x - 46, -146, 92, 116); }
+                        else { m.art.push([f.x, F.k]); DF(idx, f.x - 28, -138, 56, 52); }
+                        return;
+                    }
+                    const t = m.land.get(hexKey(f.q, f.r)); if (!t) return;
+                    if (F.s) addC(m, t.x, t.y + 6, 26); addT(m, F.s ? t.y + 24 : -5e8, c => drawFurn(c, F, t.x, t.y, 1));
+                    if (f.id === 'bed') DF(idx, t.x - 44, t.y - 24, 150, 120);
+                });
+                if (mirs.length) m.wallFn = c => mirs.forEach(x => tMirror(c, x, -88));
             } else if (id === 'trophy') {
                 m.wallFn = c => tCase(c, W); addR(m, T(0, 0).x - 30, -30, T(6, 0).x - T(0, 0).x + 60, 50, 'trophies');
                 for (let r = 0; r < 4; r++) { const t = m.land.get(hexKey(-Math.floor(r / 2) + 3, r)); if (t) t.col = '#a8343a'; }
+                [['plant', 0, 1], ['plant', 6, 1], ['plant', 0, 3], ['plant', 6, 3], ['chair', 0, 2], ['chair', 6, 2], ['rug', 2, 3], ['rug', 4, 3]].forEach(a => D(...a));
                 [[1, 2], [3, 2], [5, 2]].forEach(([c, r], i) => { const p = T(c, r); addC(m, p.x, p.y + 6, 26, 'trophies'); addT(m, p.y + 24, (cc, now) => tPed(cc, p.x, p.y, i, now)); });
             } else if (id === 'gacha') {
                 const p = T(3, 0); addR(m, p.x - 66, -34, 132, 70, 'gacha'); addT(m, 40, (c, now) => tGachaM(c, p.x, p.y + 20, now));
                 const n = T(1, 1); addC(m, n.x, n.y + 6, 24, 'gacha'); addT(m, n.y + 24, (c, now) => tNpc(c, n.x, n.y, 'pink', 'bow', now));
                 [[0, 3], [6, 3], [0, 0], [6, 0]].forEach(([c, r]) => { const q = T(c, r); addC(m, q.x, q.y + 6, 24); addT(m, q.y + 24, cc => drawFurn(cc, FURN_BY.plant, q.x, q.y, 1)); });
+                [['rug', 3, 2], ['table', 5, 2], ['chair', 4, 2], ['chair', 6, 2], ['lamp', 5, 0], ['shelf', 1, 0]].forEach(a => D(...a)); m.art = [[20, 'slime'], [490, 'tree']];
             } else if (id === 'furn') {
                 [['sofa', 0, 0], ['plant', 1, 0], ['lamp', 5, 0], ['tv', 6, 0]].forEach(([k, c, r]) => { const q = T(c, r); addC(m, q.x, q.y + 6, 26); addT(m, q.y + 24, cc => drawFurn(cc, FURN_BY[k], q.x, q.y, 1)); });
                 const a = T(2, 2), b = T(4, 2); addR(m, a.x - 50, a.y - 24, b.x - a.x + 100, 54, 'furn'); addT(m, a.y + 30, c => tCounter(c, a.x - 50, a.y - 24, b.x - a.x + 100));
+                [['shelf', 2, 0], ['shelf', 4, 0], ['chair', 0, 2], ['chair', 6, 2], ['plant', 0, 3], ['plant', 6, 3], ['rug', 1, 3], ['rug', 5, 3]].forEach(a => D(...a)); m.art = [[20, 'sun'], [250, 'star'], [490, 'heart']];
                 const n = T(3, 1); addC(m, n.x, n.y + 6, 24, 'furn'); addT(m, n.y + 24, (c, now) => tNpc(c, n.x, n.y, 'blue', 'tophat', now));
             }
             return finish(m, 150);
         }
 
         // ---- sprites (same dark-outline / flat-shaded style as the main game's world art)
-        function drawFurn(c, f, x, y, big) {
+        function drawFurn(c, f, x, y, big, thumb) {
             c.save(); c.translate(x, y); if (!big) c.scale(.9, .9); c.lineWidth = 3; c.lineJoin = 'round'; c.strokeStyle = '#2b2d42';
             const R = (a, b, w, h, col, rad = 6) => { c.fillStyle = col; c.beginPath(); c.roundRect(a, b, w, h, rad); c.fill(); c.stroke(); };
             const O = (a, b, r, col) => { c.fillStyle = col; c.beginPath(); c.arc(a, b, r, 0, 7); c.fill(); c.stroke(); };
+            if (f.w) {
+                if (f.id === 'window') { c.fillStyle = '#8ed1f5'; c.fillRect(-30, -24, 60, 48); c.strokeRect(-30, -24, 60, 48); c.beginPath(); c.moveTo(0, -24); c.lineTo(0, 24); c.moveTo(-30, 0); c.lineTo(30, 0); c.stroke(); }
+                else if (f.id === 'mirror') { c.fillStyle = '#d4a017'; c.beginPath(); c.ellipse(0, 0, 24, 30, 0, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#bfeaf5'; c.beginPath(); c.ellipse(0, 0, 18, 24, 0, 0, 7); c.fill(); }
+                else { c.translate(0, 112); tPix(c, 0, f.k); }
+                c.restore(); return;
+            }
             if (f.id === 'rug') { hexPath(c, 40); c.fillStyle = f.c; c.fill(); c.stroke(); hexPath(c, 28); c.fillStyle = '#f2c35b'; c.fill(); hexPath(c, 15); c.fillStyle = f.c; c.fill(); }
             else {
                 c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(0, 26, 30, 9, 0, 0, 7); c.fill();
                 switch (f.id) {
+                    case 'bed': if (thumb) c.scale(.5, .5); tBed(c, thumb ? 0 : 30, thumb ? 0 : 34); break;
                     case 'plant': R(-14, 4, 28, 24, '#b5651d', 5); O(0, -8, 16, f.c); O(-13, 0, 10, '#27ae60'); O(13, 0, 10, '#27ae60'); break;
                     case 'chair': R(-18, 2, 6, 26, '#6b3f1d', 2); R(12, 2, 6, 26, '#6b3f1d', 2); R(-22, -4, 44, 16, f.c); R(-22, -34, 44, 30, f.c); break;
                     case 'lamp': R(-3, -30, 6, 56, '#555', 2); c.fillStyle = f.c; c.beginPath(); c.moveTo(-18, -12); c.lineTo(18, -12); c.lineTo(10, -40); c.lineTo(-10, -40); c.closePath(); c.fill(); c.stroke(); c.fillStyle = 'rgba(255,240,150,.18)'; c.beginPath(); c.arc(0, -10, 46, 0, 7); c.fill(); break;
@@ -10724,7 +10778,7 @@
             c.restore();
         }
         function tFit(c, txt, maxW, px) { const fam = TF.split('px ')[1]; let sz = px; for (; sz > 7; sz--) { c.font = 'bold ' + sz + 'px ' + fam; if (c.measureText(txt).width <= maxW) return; } c.font = 'bold 7px ' + fam; }
-        function tBubble(c, x, y, it) { if (!(it.bub > performance.now())) return; c.save(); tFit(c, it.msg, 170, 10); c.textAlign = 'center'; const w = c.measureText(it.msg).width + 16; c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#fff'; c.beginPath(); c.roundRect(x - w / 2, y - 22, w, 22, 6); c.fill(); c.stroke(); c.beginPath(); c.moveTo(x - 5, y); c.lineTo(x, y + 7); c.lineTo(x + 5, y); c.fill(); c.fillStyle = '#2b2d42'; c.fillText(it.msg, x, y - 7); c.restore(); }
+        function tBubble(c, x, y, it) { if (!(it.bub > performance.now())) return; c.save(); tFit(c, it.msg, 220, 13); c.textAlign = 'center'; const w = c.measureText(it.msg).width + 26; c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#fff'; c.beginPath(); c.roundRect(x - w / 2, y - 32, w, 32, 8); c.fill(); c.stroke(); c.beginPath(); c.moveTo(x - 5, y); c.lineTo(x, y + 7); c.lineTo(x + 5, y); c.fill(); c.fillStyle = '#2b2d42'; c.fillText(it.msg, x, y - 11); c.restore(); }
         function tResident(c, n, now) { c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(n.x, n.y + 22, 20, 6, 0, 0, 7); c.fill(); drawCharacterModel(n.x, n.y + 4 + Math.sin(now / 300 + n.t) * 2, n.vx || 0, n.vy || 0, 18, n.skin, !!(n.vx || n.vy), n.hat, c); c.save(); c.font = 'bold 9px ' + TF.split('px ')[1]; c.textAlign = 'center'; c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#fff'; c.strokeText(n.n, n.x, n.y - 30); c.fillText(n.n, n.x, n.y - 30); c.restore(); tBubble(c, n.x, n.y - 38, n); }
         function tMail(c, x, y) { c.save(); c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#6b3f1d'; c.fillRect(x - 3, y - 20, 6, 28); c.strokeRect(x - 3, y - 20, 6, 28); c.fillStyle = '#e74c3c'; c.beginPath(); c.roundRect(x - 13, y - 38, 26, 18, [10, 10, 2, 2]); c.fill(); c.stroke(); c.fillStyle = '#ffd54f'; c.fillRect(x + 10, y - 46, 4, 12); c.restore(); }
         function tSign(c, x, y) { c.save(); c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#6b3f1d'; c.fillRect(x - 3, y - 34, 6, 42); c.strokeRect(x - 3, y - 34, 6, 42); c.fillStyle = '#f4e3b2'; c.beginPath(); c.moveTo(x - 24, y - 52); c.lineTo(x + 18, y - 52); c.lineTo(x + 26, y - 44); c.lineTo(x + 18, y - 36); c.lineTo(x - 24, y - 36); c.closePath(); c.fill(); c.stroke(); c.fillStyle = '#c0392b'; c.fillRect(x - 16, y - 46, 26, 3); c.fillRect(x - 16, y - 41, 18, 3); c.restore(); }
@@ -10806,7 +10860,8 @@
             const W = m.wall; c.save(); c.lineWidth = 6; c.strokeStyle = themes[0].hazard.edge; c.fillStyle = W.col; c.beginPath(); c.rect(W.x0, -170, W.x1 - W.x0, 146); c.fill(); c.stroke();
             c.fillStyle = 'rgba(0,0,0,.05)'; for (let x = W.x0 + 20; x < W.x1; x += 52) c.fillRect(x, -170, 26, 146);
             c.fillStyle = W.dado; c.fillRect(W.x0, -62, W.x1 - W.x0, 38); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(W.x0, -62, W.x1 - W.x0, 5);
-            if (m.id !== 'trophy') [W.x0 + 150, W.x1 - 150].forEach(x => { if (m.id === 'home' && x > W.x1 - 200) return; c.lineWidth = 4; c.strokeStyle = '#2b2d42'; c.fillStyle = '#8ed1f5'; c.fillRect(x - 36, -140, 72, 62); c.strokeRect(x - 36, -140, 72, 62); c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.ellipse(x - 8, -112, 16, 8, 0, 0, 7); c.fill(); c.beginPath(); c.moveTo(x, -140); c.lineTo(x, -78); c.moveTo(x - 36, -109); c.lineTo(x + 36, -109); c.stroke(); });
+            if (m.id !== 'trophy') (m.id === 'home' ? (m.wins || []) : [W.x0 + 150, W.x1 - 150]).forEach(x => { c.lineWidth = 4; c.strokeStyle = '#2b2d42'; c.fillStyle = '#8ed1f5'; c.fillRect(x - 36, -140, 72, 62); c.strokeRect(x - 36, -140, 72, 62); c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.ellipse(x - 8, -112, 16, 8, 0, 0, 7); c.fill(); c.beginPath(); c.moveTo(x, -140); c.lineTo(x, -78); c.moveTo(x - 36, -109); c.lineTo(x + 36, -109); c.stroke(); });
+            (m.art || []).forEach(a => tPix(c, a[0], a[1]));
             c.restore(); if (m.wallFn) m.wallFn(c);
         }
 
@@ -10922,7 +10977,8 @@
         function decoBar() {
             const bar = document.getElementById('town-deco-bar'); bar.innerHTML = '';
             FURN.forEach(f => { const n = furnFree(f.id); if (n <= 0) return; const b = document.createElement('button'); b.className = 'tchip' + (tSel === f.id ? ' on' : ''); b.textContent = f.n + ' x' + n; b.onclick = () => { tSel = tSel === f.id ? null : f.id; decoBar(); }; bar.appendChild(b); });
-            if (!bar.children.length) bar.textContent = 'Nothing to place - buy furniture at the Furniture Shop! Tap placed items to pick them up.';
+            if (!bar.children.length) { const sp = document.createElement('span'); sp.textContent = 'Tap anything in the room to put it back in your inventory. Buy more at the Furniture Shop!'; bar.appendChild(sp); }
+
         }
         document.getElementById('town-hanger').onclick = () => tShop(['skins', 'hats'], 'Wardrobe');
         document.getElementById('portal-cancel').onclick = () => { document.getElementById('portal-modal').style.display = 'none'; };
@@ -10932,10 +10988,18 @@
         displayCanvas.addEventListener('pointerdown', e => {
             if (!townActive) return; initAudio(); const P = tLogical(e);
             if (tDeco && tloc === 'home') {
-                const q = pixelToAxial(P.x + camera.x, P.y + camera.y), t = tmap.land.get(hexKey(q.q, q.r)); if (!t || t.t !== 'i') return;
+                const wx = P.x + camera.x, wy = P.y + camera.y, dh = (tmap.defs || []).find(d => wx >= d.x && wx <= d.x + d.w && wy >= d.y && wy <= d.y + d.h);
+                if (dh) { const l = homeList(); l.splice(dh.idx, 1); saveHome(l); tmap = buildInt('home'); decoBar(); return; }
+                const SF = tSel && FURN_BY[tSel];
+                if (SF && SF.w) {
+                    const W = tmap.wall, x = Math.max(W.x0 + 40, Math.min(W.x1 - 40, Math.round(wx / 10) * 10));
+                    if (furnFree(tSel) > 0 && wy < -24 && wy > -170 && !tmap.defs.some(d => d.y < -24 && Math.abs(d.x + d.w / 2 - x) < 60)) { const l = homeList(); l.push({ id: tSel, x }); saveHome(l); tmap = buildInt('home'); if (furnFree(tSel) <= 0) tSel = null; decoBar(); }
+                    return;
+                }
+                const q = pixelToAxial(wx, wy), t = tmap.land.get(hexKey(q.q, q.r)); if (!t || t.t !== 'i') return;
                 const l = homeList(), k = l.findIndex(o => o.q === t.q && o.r === t.r);
                 if (k >= 0) l.splice(k, 1);
-                else if (tSel && furnFree(tSel) > 0) { if (FURN_BY[tSel].s && Math.hypot(tp.x - t.x, tp.y - t.y) < 55) return; l.push({ id: tSel, q: t.q, r: t.r }); }
+                else if (tSel && furnFree(tSel) > 0 && !FURN_BY[tSel].w) { if (FURN_BY[tSel].s && Math.hypot(tp.x - t.x, tp.y - t.y) < 55) return; l.push({ id: tSel, q: t.q, r: t.r }); }
                 else return;
                 saveHome(l); tmap = buildInt('home'); if (tSel && furnFree(tSel) <= 0) tSel = null; decoBar(); return;
             }
@@ -10954,7 +11018,7 @@
             const L = document.getElementById('furn-list'); L.innerHTML = '';
             FURN.forEach(f => {
                 const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:12px;background:#3a3d5c;border-radius:8px;padding:10px;margin-bottom:8px';
-                const cv = document.createElement('canvas'); cv.width = 96; cv.height = 96; cv.style.cssText = 'width:64px;height:64px;flex:none'; const cc = cv.getContext('2d'); drawFurn(cc, f, 48, 44, 1);
+                const cv = document.createElement('canvas'); cv.width = 96; cv.height = 96; cv.style.cssText = 'width:64px;height:64px;flex:none'; const cc = cv.getContext('2d'); drawFurn(cc, f, 48, 44, 1, 1);
                 const t = document.createElement('div'); t.style.cssText = 'flex:1;font-size:.7rem;line-height:1.6'; t.innerHTML = f.n + '<br><span style="opacity:.7">Owned: ' + furnOwned(f.id) + '</span>';
                 const b = document.createElement('button'); b.className = 'menu-btn'; b.style.cssText = 'min-width:0;padding:8px 12px;font-size:.65rem;background:' + (totalCoins >= f.p ? '#4caf50' : '#666'); b.textContent = f.p + ' coins';
                 b.onclick = () => { if (totalCoins < f.p) return; totalCoins -= f.p; storage.set('landSlidersCoins', totalCoins); storage.set('furn_' + f.id, furnOwned(f.id) + 1); updateHUD(); furnRender(); };
