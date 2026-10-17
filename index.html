@@ -10720,7 +10720,9 @@
                 m.wallFn = c => tCase(c, W); addR(m, T(0, 0).x - 30, -30, T(6, 0).x - T(0, 0).x + 60, 50, 'trophies');
                 for (let r = 0; r < 4; r++) { const t = m.land.get(hexKey(-Math.floor(r / 2) + 3, r)); if (t) t.col = '#a8343a'; }
                 [['plant', 0, 1], ['plant', 6, 1], ['plant', 0, 3], ['plant', 6, 3], ['chair', 0, 2], ['chair', 6, 2], ['rug', 2, 3], ['rug', 4, 3]].forEach(a => D(...a));
-                [[1, 2], [3, 2], [5, 2]].forEach(([c, r], i) => { const p = T(c, r); addC(m, p.x, p.y + 6, 26, 'trophies'); addT(m, p.y + 24, (cc, now) => tPed(cc, p.x, p.y, i, now)); });
+                const cq = T(5, 3), sayFn = () => { const L = achievementDB.filter(a => achievementRewards[a.id] && storage.get('ach_' + a.id) !== 'true').map(a => { const d = a.desc.replace(/\.\s*$/, ''); return 'You should ' + d.charAt(0).toLowerCase() + d.slice(1) + '... I heard it unlocks ' + (achievementRewards[a.id].type === 'skin' ? 'something shiny' : 'something powerful') + '.'; }); return L.length ? L : ['You have earned every reward! I am so proud of you.', 'Check back when new trophies arrive!']; };
+                m.npcs = [{ n: 'Curator Gel', skin: 'green', hat: 'crown', x: cq.x, y: cq.y, say: [], sayFn }]; addC(m, cq.x, cq.y + 6, 24); addT(m, cq.y + 24, (cc, now) => tNpc(cc, cq.x, cq.y, 'green', 'crown', now));
+                [[1, 2], [3, 2], [5, 2]].forEach(([c, r], i) => { const p = T(c, r); addC(m, p.x, p.y + 6, 26); addT(m, p.y + 24, (cc, now) => tPed(cc, p.x, p.y, i, now)); });
             } else if (id === 'gacha') {
                 const p = T(3, 0); addR(m, p.x - 66, -34, 132, 70, 'gacha'); addT(m, 40, (c, now) => tGachaM(c, p.x, p.y + 20, now));
                 const n = T(1, 1); addC(m, n.x, n.y + 6, 24, 'gacha'); addT(m, n.y + 24, (c, now) => tNpc(c, n.x, n.y, 'pink', 'bow', now));
@@ -10865,21 +10867,40 @@
         function tCase(c, W) {
             c.save(); c.lineWidth = 4; c.strokeStyle = '#2b2d42'; const x = W.x0 + 40, w = W.x1 - W.x0 - 80; c.fillStyle = '#5a3a28'; c.beginPath(); c.roundRect(x, -138, w, 108, 6); c.fill(); c.stroke();
             c.fillStyle = '#8d6e4a'; c.fillRect(x + 4, -88, w - 8, 6); c.fillRect(x + 4, -38, w - 8, 6);
-            for (let s = 0; s < 20; s++) { const a = achievementDB[s]; if (!a) continue; const im = timg(a.icon); if (!(im.complete && im.naturalWidth)) continue; c.globalAlpha = storage.get('ach_' + a.id) === 'true' ? 1 : .25; c.drawImage(im, x + 14 + (s % 10) * ((w - 28) / 10), s < 10 ? -132 : -82, 40, 40); c.globalAlpha = 1; }
+            const pitch = (w - 28) / 12; for (let s = 0; s < 24; s++) { const a = achievementDB[s]; if (!a) continue; const im = timg(a.icon); if (!(im.complete && im.naturalWidth)) continue; const col = s < 12 ? s : s - 12; c.globalAlpha = storage.get('ach_' + a.id) === 'true' ? 1 : .25; c.drawImage(im, x + 14 + col * pitch + (pitch - 34) / 2, s < 12 ? -128 : -78, 34, 34); c.globalAlpha = 1; }
             c.restore();
         }
         function tPed(c, x, y, i, now) {
             const ach = achievementDB.filter(a => storage.get('ach_' + a.id) === 'true').length, T = [['CLASSIC', 'Lv ' + highestLevel], ['ENDLESS', 'Lv ' + bestEndlessLevel], ['TROPHIES', ach + '/' + achievementDB.length]][i];
-            c.save(); c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#c9c9d1'; c.beginPath(); c.roundRect(x - 24, y - 4, 48, 34, 4); c.fill(); c.stroke(); c.fillStyle = '#ffd54f';
-            c.beginPath(); c.moveTo(x - 14, y - 40 + Math.sin(now / 400) * 2); c.lineTo(x + 14, y - 40 + Math.sin(now / 400) * 2); c.lineTo(x + 8, y - 8); c.lineTo(x - 8, y - 8); c.closePath(); c.fill(); c.stroke();
-            [[T[0], y - 66, 12], [T[1], y - 50, 11]].forEach(([t, ty, px]) => { tFit(c, t, 150, px); const w = c.measureText(t).width + 12; c.fillStyle = '#f4e3b2'; c.strokeStyle = '#2b2d42'; c.lineWidth = 2; c.beginPath(); c.roundRect(x - w / 2, ty - 7, w, 14, 4); c.fill(); c.stroke(); c.fillStyle = '#3b2410'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x, ty + 1); }); c.restore();
+            const pal = [['#fff3a8', '#f2b705', '#a86f00'], ['#e9c8ff', '#a45be0', '#4b1d86'], ['#c5fff0', '#32c9a0', '#0d6b57']][i], by = y - 24, fl = i === 1 ? Math.sin(now / 520) * 3 : 0;
+            c.save(); c.lineJoin = 'round'; c.strokeStyle = '#2b2d42';
+            const sp = c.createRadialGradient(x, y + 28, 3, x, y + 28, 58); sp.addColorStop(0, 'rgba(255,238,160,.55)'); sp.addColorStop(1, 'rgba(255,238,160,0)'); c.fillStyle = sp; c.beginPath(); c.ellipse(x, y + 28, 58, 19, 0, 0, 7); c.fill();
+            const hl = c.createRadialGradient(x, by - 34 + fl, 2, x, by - 34 + fl, 46); hl.addColorStop(0, 'rgba(255,255,255,.35)'); hl.addColorStop(.5, pal[1] + '40'); hl.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = hl; c.beginPath(); c.arc(x, by - 34 + fl, 46, 0, 7); c.fill();
+            const mg = c.createLinearGradient(x - 30, 0, x + 30, 0); mg.addColorStop(0, '#d9dbe6'); mg.addColorStop(.35, '#ffffff'); mg.addColorStop(1, '#a9adc2');
+            c.lineWidth = 3; c.fillStyle = mg; c.beginPath(); c.roundRect(x - 31, y + 16, 62, 14, 3); c.fill(); c.stroke(); c.beginPath(); c.roundRect(x - 23, y - 14, 46, 32, 3); c.fill(); c.stroke(); c.beginPath(); c.roundRect(x - 28, y - 24, 56, 11, 3); c.fill(); c.stroke();
+            c.fillStyle = pal[1]; c.fillRect(x - 23, y - 12, 46, 3); c.fillRect(x - 23, y + 12, 46, 3); c.fillStyle = 'rgba(0,0,0,.08)'; for (let k = -1; k <= 1; k++) c.fillRect(x + k * 14 - 1, y - 8, 2, 20);
+            const G = (y0, y1) => { const g = c.createLinearGradient(x - 20, y0, x + 20, y1); g.addColorStop(0, pal[0]); g.addColorStop(.55, pal[1]); g.addColorStop(1, pal[2]); return g; };
+            c.lineWidth = 3;
+            if (i === 0) { // gold cup
+                c.fillStyle = G(by - 50, by); c.beginPath(); c.roundRect(x - 13, by - 6, 26, 7, 2); c.fill(); c.stroke(); c.fillRect(x - 4, by - 18, 8, 14); c.strokeRect(x - 4, by - 18, 8, 14);
+                c.lineWidth = 4; c.strokeStyle = pal[2]; c.beginPath(); c.arc(x - 21, by - 36, 9, Math.PI * .5, Math.PI * 1.5); c.stroke(); c.beginPath(); c.arc(x + 21, by - 36, 9, -Math.PI * .5, Math.PI * .5); c.stroke(); c.strokeStyle = '#2b2d42'; c.lineWidth = 3;
+                c.fillStyle = G(by - 54, by - 14); c.beginPath(); c.moveTo(x - 22, by - 54); c.lineTo(x + 22, by - 54); c.quadraticCurveTo(x + 22, by - 18, x, by - 17); c.quadraticCurveTo(x - 22, by - 18, x - 22, by - 54); c.closePath(); c.fill(); c.stroke();
+                c.fillStyle = 'rgba(255,255,255,.6)'; c.beginPath(); c.ellipse(x - 12, by - 38, 3, 11, .15, 0, 7); c.fill(); c.fillStyle = '#fff6c8'; c.beginPath(); for (let k = 0; k < 10; k++) { const r = k % 2 ? 4 : 9, a = -Math.PI / 2 + k * Math.PI / 5; c.lineTo(x + 2 + Math.cos(a) * r, by - 36 + Math.sin(a) * r); } c.closePath(); c.fill();
+            } else if (i === 1) { // floating amethyst crystal
+                c.fillStyle = pal[2]; c.beginPath(); c.ellipse(x, by - 2, 16, 5, 0, 0, 7); c.fill(); c.stroke();
+                const cy = by - 8 + fl; c.fillStyle = G(cy - 56, cy); c.beginPath(); c.moveTo(x, cy - 58); c.lineTo(x + 19, cy - 36); c.lineTo(x + 12, cy - 6); c.lineTo(x - 12, cy - 6); c.lineTo(x - 19, cy - 36); c.closePath(); c.fill(); c.stroke();
+                c.fillStyle = 'rgba(255,255,255,.5)'; c.beginPath(); c.moveTo(x, cy - 58); c.lineTo(x - 19, cy - 36); c.lineTo(x - 6, cy - 36); c.closePath(); c.fill(); c.fillStyle = 'rgba(40,0,90,.28)'; c.beginPath(); c.moveTo(x, cy - 58); c.lineTo(x + 19, cy - 36); c.lineTo(x + 6, cy - 36); c.closePath(); c.fill();
+                c.lineWidth = 2; c.beginPath(); c.moveTo(x - 6, cy - 36); c.lineTo(x - 12, cy - 6); c.moveTo(x + 6, cy - 36); c.lineTo(x + 12, cy - 6); c.moveTo(x - 6, cy - 36); c.lineTo(x + 6, cy - 36); c.stroke();
+            } else { // star on a stand with ribbon
+                c.fillStyle = '#e0524d'; c.beginPath(); c.moveTo(x - 10, by - 22); c.lineTo(x - 20, by + 2); c.lineTo(x - 11, by - 2); c.lineTo(x - 4, by - 8); c.closePath(); c.fill(); c.stroke(); c.beginPath(); c.moveTo(x + 10, by - 22); c.lineTo(x + 20, by + 2); c.lineTo(x + 11, by - 2); c.lineTo(x + 4, by - 8); c.closePath(); c.fill(); c.stroke();
+                c.fillStyle = G(by - 56, by - 6); c.fillRect(x - 3, by - 14, 6, 10); c.strokeRect(x - 3, by - 14, 6, 10);
+                c.beginPath(); for (let k = 0; k < 10; k++) { const r = k % 2 ? 11 : 25, a = -Math.PI / 2 + k * Math.PI / 5; c.lineTo(x + Math.cos(a) * r, by - 38 + Math.sin(a) * r); } c.closePath(); c.fill(); c.stroke();
+                c.fillStyle = 'rgba(255,255,255,.55)'; c.beginPath(); c.moveTo(x - 2, by - 58); c.lineTo(x - 6, by - 44); c.lineTo(x - 18, by - 44); c.lineTo(x - 5, by - 40); c.closePath(); c.fill();
+            }
+            for (let k = 0; k < 3; k++) { const ph = now / 380 + k * 2.1 + i, a = Math.max(0, Math.sin(ph)), sx = x + Math.cos(k * 2.4 + i) * 26, sy = by - 36 + Math.sin(k * 1.7 + i) * 22 + fl; c.globalAlpha = a; c.fillStyle = '#fff'; c.fillRect(sx - 1, sy - 4 * a - 1, 2, 8 * a + 2); c.fillRect(sx - 4 * a - 1, sy - 1, 8 * a + 2, 2); } c.globalAlpha = 1;
+            [[T[0], y - 112, 12], [T[1], y - 95, 11]].forEach(([t, ty, px]) => { tFit(c, t, 150, px); const w = c.measureText(t).width + 16; c.fillStyle = '#f6e6b4'; c.strokeStyle = '#2b2d42'; c.lineWidth = 3; c.beginPath(); c.roundRect(x - w / 2, ty - 8, w, 16, 4); c.fill(); c.stroke(); c.strokeStyle = pal[1]; c.lineWidth = 1.5; c.beginPath(); c.roundRect(x - w / 2 + 2.5, ty - 5.5, w - 5, 11, 2); c.stroke(); c.fillStyle = '#3b2410'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x, ty + 1); });
+            c.restore();
         }
-        function tGachaM(c, x, y, now) {
-            c.save(); c.lineWidth = 4; c.strokeStyle = '#2b2d42'; c.fillStyle = '#cfeeff'; c.beginPath(); c.roundRect(x - 50, y - 130, 100, 84, 24); c.fill(); c.stroke();
-            ['#ff6b6b', '#feca57', '#48dbfb', '#1dd1a1', '#ff9ff3', '#a29bfe'].forEach((k, i) => { c.fillStyle = k; c.beginPath(); c.arc(x - 30 + (i % 3) * 30, y - 84 + Math.sin(now / 500 + i) * 3 - (i > 2 ? 0 : 30), 14, 0, 7); c.fill(); c.stroke(); });
-            c.fillStyle = '#d63031'; c.beginPath(); c.roundRect(x - 56, y - 48, 112, 70, 10); c.fill(); c.stroke(); c.fillStyle = '#ffd54f'; c.beginPath(); c.arc(x, y - 22, 14, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#222'; c.fillRect(x - 20, y - 2, 40, 16); c.restore();
-        }
-        function tCounter(c, x, y, w) { c.save(); c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#8d5524'; c.beginPath(); c.roundRect(x, y + 8, w, 40, 6); c.fill(); c.stroke(); c.fillStyle = '#b9814a'; c.beginPath(); c.roundRect(x - 6, y, w + 12, 16, 5); c.fill(); c.stroke(); c.restore(); }
         function tNpc(c, x, y, skin, hat, now) { c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(x, y + 22, 22, 7, 0, 0, 7); c.fill(); drawCharacterModel(x, y + 4 + Math.sin(now / 400 + x) * 2, 0, 0, 20, skin, false, hat, c); }
         function tWall(c, m) {
             const W = m.wall; c.save(); c.lineWidth = 6; c.strokeStyle = themes[0].hazard.edge; c.fillStyle = W.col; c.beginPath(); c.rect(W.x0, -170, W.x1 - W.x0, 146); c.fill(); c.stroke();
@@ -10907,12 +10928,13 @@
         // Load a town/interior layout into the game's real level globals so the game's own draw()/update() run it
         let tDlgOpen = false, tDlgTimer = 0, tDlgMsg = '', tDlgTyping = false;
         function tOpenDlg(n) {
-            n.armed = false; n.w = 400; n.i = n.i === undefined ? 0 : n.i + 1; const msg = n.say[n.i % n.say.length];
+            n.armed = false; n.w = 400; n.i = n.i === undefined ? 0 : n.i + 1; const lines = n.sayFn ? n.sayFn() : n.say, msg = lines[n.i % lines.length];
             const $ = id => document.getElementById(id), box = $('town-dlg'), cv = $('dlg-face'), cx = cv.getContext('2d');
             $('dlg-name').textContent = n.n; $('dlg-text').textContent = ''; cx.clearRect(0, 0, 80, 80); drawCharacterModel(40, 46, 0, 0, 22, n.skin, false, n.hat, cx);
             box.style.display = 'flex'; tDlgOpen = true; player.vx = player.vy = 0; let k = 0; clearInterval(tDlgTimer); tDlgMsg = msg; tDlgTyping = true;
             tDlgTimer = setInterval(() => { k++; $('dlg-text').textContent = msg.slice(0, k); if (k >= msg.length) { clearInterval(tDlgTimer); tDlgTyping = false; } }, 28);
         }
+        function tNpcTalk(n) { const d = Math.hypot(tp.x - n.x, tp.y - n.y); if (d > 80) n.armed = true; else if (d < 40 && n.armed !== false && !tDlgOpen) tOpenDlg(n); }
         function tCloseDlg() { clearInterval(tDlgTimer); tDlgTyping = false; document.getElementById('town-dlg').style.display = 'none'; tDlgOpen = false; }
         window.addEventListener('pointerdown', e => { if (tDlgOpen) { if (tDlgTyping) { clearInterval(tDlgTimer); tDlgTyping = false; document.getElementById('dlg-text').textContent = tDlgMsg; } else tCloseDlg(); e.stopPropagation(); e.preventDefault(); } }, true);
         function tApply(m) {
@@ -10985,7 +11007,8 @@
                 else if (tFadeDir < 0 && tFade <= 0) { tFade = 0; tFadeDir = 0; }
             }
             if (!modalOpen && tFadeDir !== 1) {
-                if (tloc === 'town') { tNpcStep(1); const nw = performance.now(); (tmap.npcs || []).forEach(n => { const d = Math.hypot(tp.x - n.x, tp.y - n.y); if (d > 80) n.armed = true; else if (d < 40 && n.armed !== false && !tDlgOpen) tOpenDlg(n); }); (tmap.ias || []).forEach(it => { if (Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
+                if (tloc === 'trophy') (tmap.npcs || []).forEach(tNpcTalk);
+                if (tloc === 'town') { tNpcStep(1); const nw = performance.now(); (tmap.npcs || []).forEach(tNpcTalk); (tmap.ias || []).forEach(it => { if (Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
                 if (tFadeDir === 0 && tFade === 0) {
                     if (tloc === 'town') {
                         const b = BL.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
