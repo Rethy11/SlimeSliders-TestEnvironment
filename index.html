@@ -699,6 +699,8 @@
         .town-ib { position:absolute; top:14px; width:42px; height:42px; display:flex; align-items:center; justify-content:center; pointer-events:auto; border:none; border-radius:8px; background:rgba(20,20,40,.75); cursor:pointer; padding:0; }
         .town-ib.on { background:#ffd700; } .town-ib.on svg { stroke:#000; }
         #town-hanger { left:14px; } #town-pencil { left:66px; display:none; }
+        #town-exit, #town-save { display:none; position:absolute; top:14px; height:42px; padding:0 16px; border:none; border-radius:8px; font:inherit; font-size:.65rem; pointer-events:auto; cursor:pointer; }
+        #town-exit { left:14px; background:#e74c3c; color:#fff; } #town-save { right:14px; background:#ffd700; color:#000; }
         #town-deco-bar { display:none; pointer-events:auto; position:absolute; bottom:30px; left:50%; transform:translateX(-50%); gap:6px; flex-wrap:wrap; justify-content:center; width:90%; max-width:420px; font-size:.55rem; line-height:1.6; text-align:center; background:rgba(20,20,40,.8); padding:8px; border-radius:8px; }
         .tchip { padding:8px 10px; border:none; border-radius:6px; background:#6c7a89; color:#fff; font:inherit; font-size:.55rem; cursor:pointer; }
         .tchip.on { background:var(--accent); }
@@ -739,6 +741,7 @@
     <canvas id="gameCanvas"></canvas>
     <div id="town-hud">
         <button id="town-hanger" class="town-ib" aria-label="Change clothes"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8.2a2.6 2.6 0 1 0-2.6-2.6"/><path d="M12 8.2v2.3L3.4 16.6a1.7 1.7 0 0 0 1 3.1h15.2a1.7 1.7 0 0 0 1-3.1L12 10.5"/></svg></button><button id="town-pencil" class="town-ib" aria-label="Decorate"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg></button><div id="town-coins"></div>
+        <button id="town-exit">Exit</button><button id="town-save">Save</button>
         <div id="town-deco-bar"></div>
     </div>
 
@@ -924,6 +927,15 @@
         <div style="display:flex;gap:12px;">
             <button id="portal-cancel" class="menu-btn" style="flex:1;min-width:0;margin:0;padding:18px 6px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1;background:#8d99ae;">Cancel</button>
             <button id="portal-enter" class="menu-btn" style="flex:1;min-width:0;margin:0;padding:18px 6px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1;background:var(--accent);">Enter</button>
+        </div>
+    </div>
+
+    <div id="edit-modal" class="modal">
+        <h2>Are you sure?</h2>
+        <p style="margin-bottom:22px;font-size:.8rem;">Any edits will be lost.</p>
+        <div style="display:flex;gap:12px;">
+            <button id="edit-exit" class="menu-btn" style="flex:1;min-width:0;margin:0;padding:18px 6px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1;background:#e74c3c;">Exit</button>
+            <button id="edit-save" class="menu-btn" style="flex:1;min-width:0;margin:0;padding:18px 6px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1;background:#ffd700;color:#000;">Save</button>
         </div>
     </div>
 
@@ -2606,9 +2618,10 @@
         // and screen space calculations.
         // ==========================================
         function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+        let tZoom = 1, tCullEx = 0, tCullEy = 0; // home-edit zoom (1 everywhere else)
         function isOnScreen(x, y, buffer) { 
             buffer = buffer || 50; 
-            return x > camera.x - buffer && x < camera.x + canvas.width + buffer && y > camera.y - buffer && y < camera.y + canvas.height + buffer;
+            return x > camera.x - buffer - tCullEx && x < camera.x + canvas.width + buffer + tCullEx && y > camera.y - buffer - tCullEy && y < camera.y + canvas.height + buffer + tCullEy;
         }
         function isNearScreen(x, y, buffer = 0) {
             let w = canvas.width * 2; let h = canvas.height * 2;
@@ -2710,8 +2723,8 @@
             // buildLandTileGrid) instead of scanning every land tile in the level, then run the
             // exact same isOnScreen check only on those candidates - identical visual result.
             let candidates = getLandTilesInView(
-                camera.x - buf, camera.y - buf,
-                camera.x + canvas.width + buf, camera.y + canvas.height + buf
+                camera.x - buf - tCullEx, camera.y - buf - tCullEy,
+                camera.x + canvas.width + buf + tCullEx, camera.y + canvas.height + buf + tCullEy
             );
             for (let i = 0; i < candidates.length; i++) {
                 let tile = candidates[i];
@@ -8609,7 +8622,9 @@
             let pdrawX = player.prevWorldX + (player.worldX - player.prevWorldX) * renderAlpha;
             let pdrawY = player.prevWorldY + (player.worldY - player.prevWorldY) * renderAlpha;
             
-            ctx.save(); ctx.translate(-camX + shakeX, -camY + shakeY); 
+            if (townActive && tDeco) { camera.x = camX = tPan.x; camera.y = camY = tPan.y; }
+            tCullEx = (canvas.width / tZoom - canvas.width) / 2; tCullEy = (canvas.height / tZoom - canvas.height) / 2;
+            ctx.save(); if (tZoom !== 1) { ctx.translate(canvas.width / 2, canvas.height / 2); ctx.scale(tZoom, tZoom); ctx.translate(-canvas.width / 2, -canvas.height / 2); } ctx.translate(-camX + shakeX, -camY + shakeY); 
             // Void: the entire map desaturates to grayscale while equipped - every layer
             // drawn from here down (sky, floor, decor, trees, fences, hazards, coins, goal)
             // inherits this filter via canvas state unless a draw call explicitly saves and
@@ -8620,7 +8635,7 @@
             // Fairy Dust: rebuilt fresh every frame as flowers get drawn below, then consumed
             // by the moonlight overlay pass at the end of this function.
             fairyLightSources.length = 0;
-            if (townActive && tloc !== 'town') { ctx.fillStyle = '#000'; ctx.fillRect(camX - 40, camY - 40, canvas.width + 80, canvas.height + 80); } else drawSkyBackground();
+            if (townActive && tloc !== 'town') { ctx.fillStyle = '#000'; ctx.fillRect(camX - 40 - tCullEx, camY - 40 - tCullEy, canvas.width + 80 + 2 * tCullEx, canvas.height + 80 + 2 * tCullEy); } else drawSkyBackground();
             drawHazardHoles();
             
             let tiltX = player.vx * 1.5; let tiltY = player.vy * 1.5;
@@ -10560,8 +10575,9 @@
         const tKeys = {}, tImg = {};
         const hh = (i, j) => (Math.imul(Math.round(i) + 7, 73856093) ^ Math.imul(Math.round(j) + 13, 19349663)) >>> 0;
         const furnOwned = id => parseInt(storage.get('furn_' + id) || 0);
-        const homeList = () => { try { return JSON.parse(storage.get('homeFurn') || '[]'); } catch (e) { return []; } };
-        const saveHome = l => storage.set('homeFurn', JSON.stringify(l));
+        let tDraft = null, tPan = { x: 0, y: 0 };
+        const homeList = () => { try { return JSON.parse(tDraft !== null ? tDraft : (storage.get('homeFurn') || '[]')); } catch (e) { return []; } };
+        const saveHome = l => { const j = JSON.stringify(l); if (tDraft !== null) tDraft = j; else storage.set('homeFurn', j); };
         const homeRem = () => { try { return JSON.parse(storage.get('homeRem') || '[]'); } catch (e) { return []; } };
         const HOME_SEED = [['rug', 3, 2], ['chair', 2, 3], ['chair', 4, 3], ['plant', 6, 0], ['plant', 0, 3], ['lamp', 6, 2]];
         function seedHome() {
@@ -10653,7 +10669,7 @@
             // small interactables: mailbox, sign post, well, cat, ducks, sleeping dog, flower pots
             const tI = (x, y, r, msgs, draw, solid) => { [x, y] = tSafe(x, y); const it = { x, y, i: 0, bub: 0, msg: '', msgs }; if (solid) addC(m, x, y, r); addT(m, y + 8, (c, now) => { draw(c, x, y, now); tBubble(c, x, y - 50, it); }); m.ias = (m.ias || []).concat(it); };
             tI(-330, -70, 8, ['Mail for: S. Lime.', 'Empty. Again.'], (c, x, y) => tMail(c, x, y), 1);
-            tI(-70, -80, 8, ['<- HOME  TROPHIES ->', 'Gacha: south. Luck: ???'], (c, x, y) => tSign(c, x, y), 1);
+            tI(-70, -80, 8, ['<- CLASSIC   ENDLESS ->'], (c, x, y) => tSign(c, x, y), 1);
             tI(420, -62, 20, ['You hear a faint "plip".', 'Make a wish... for coins?'], (c, x, y, now) => tWell(c, x, y, now), 1);
             tI(-190, 215, 12, ['Meow.', 'Purrrr...', '*ignores you*'], (c, x, y, now) => tCat(c, x, y, now), 0);
             tI(-150, 330, 10, ['Quack!', 'Quack quack.'], (c, x, y, now) => tDuck(c, x, y, now), 0);
@@ -10818,7 +10834,7 @@
             c.strokeStyle = '#2b2d42'; c.lineWidth = 4;
             [-62, 62].forEach(dx => { c.fillStyle = '#bfeaf5'; c.fillRect(x + dx - 19, y - h + 24, 38, 34); c.strokeRect(x + dx - 19, y - h + 24, 38, 34); c.lineWidth = 2; c.beginPath(); c.moveTo(x + dx, y - h + 24); c.lineTo(x + dx, y - h + 58); c.moveTo(x + dx - 19, y - h + 41); c.lineTo(x + dx + 19, y - h + 41); c.stroke(); c.lineWidth = 4; });
             c.fillStyle = '#7a4a24'; c.beginPath(); c.roundRect(x - 22, y - 64, 44, 64, [22, 22, 0, 0]); c.fill(); c.stroke(); c.fillStyle = '#ffd54f'; c.beginPath(); c.arc(x + 12, y - 30, 4, 0, 7); c.fill();
-            c.fillStyle = '#f4e3b2'; c.beginPath(); c.roundRect(x - 56, y - h - 66, 112, 26, 6); c.fill(); c.stroke(); c.fillStyle = '#3b2410'; tFit(c, b.label, 100, 14); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(b.label, x, y - h - 53);
+            if (b.id !== 'home') { c.fillStyle = '#f4e3b2'; c.beginPath(); c.roundRect(x - 56, y - h - 66, 112, 26, 6); c.fill(); c.stroke(); c.fillStyle = '#3b2410'; tFit(c, b.label, 100, 14); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(b.label, x, y - h - 53); }
             const ey = y - h - 92;
             if (b.id === 'trophy') { c.fillStyle = '#ffd54f'; c.strokeStyle = '#2b2d42'; c.beginPath(); c.moveTo(x - 16, ey - 22); c.lineTo(x + 16, ey - 22); c.lineTo(x + 8, ey); c.lineTo(x - 8, ey); c.closePath(); c.fill(); c.stroke(); c.fillRect(x - 3, ey, 6, 8); c.fillRect(x - 12, ey + 8, 24, 6); c.strokeRect(x - 12, ey + 8, 24, 6); }
             else if (b.id === 'gacha') { c.beginPath(); c.arc(x, ey - 4, 18, 0, 7); c.fillStyle = '#fff'; c.fill(); c.stroke(); c.beginPath(); c.arc(x, ey - 4, 18, Math.PI, 0); c.fillStyle = '#ff5c8a'; c.fill(); c.stroke(); }
@@ -10909,7 +10925,7 @@
         function tGo(loc, from) {
             if (tFadeDir || tFade) return; tFadeDir = 1;
             tFadeCb = () => {
-                tloc = loc; tmap = loc === 'town' ? townMap : buildInt(loc); tApply(tmap); tDeco = false; tSel = null;
+                tloc = loc; tmap = loc === 'town' ? townMap : buildInt(loc); tApply(tmap); tDeco = false; tDraft = null; tZoom = 1; tCullEx = tCullEy = 0; tSel = null;
                 if (loc === 'town') { const b = BL.find(b => b.id === from); tp.x = b.x; tp.y = b.base + 36; } else { tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
                 tp.vx = tp.vy = 0; tp.jx = tp.jy = 0; tSnap(); tHud();
             };
@@ -10941,7 +10957,7 @@
         }
         function townPre() {
             const modalOpen = [...document.querySelectorAll('.modal')].some(m => m.style.display === 'block');
-            if (modalOpen || tFadeDir === 1) { player.vx = 0; player.vy = 0; }
+            if (modalOpen || tFadeDir === 1 || tDeco) { player.vx = 0; player.vy = 0; }
             else { const ax = (tKeys.ArrowRight || tKeys.d ? 1 : 0) - (tKeys.ArrowLeft || tKeys.a ? 1 : 0), ay = (tKeys.ArrowDown || tKeys.s ? 1 : 0) - (tKeys.ArrowUp || tKeys.w ? 1 : 0); if (ax || ay) { const l = Math.hypot(ax, ay); player.vx += ax / l * .5; player.vy += ay / l * .5; } }
             if (tFadeDir) {
                 tFade += tFadeDir * 0.07;
@@ -10960,14 +10976,21 @@
             const ce = document.getElementById('town-coins'), cs = String(totalCoins);
             if (ce.dataset.v !== cs) { ce.dataset.v = cs; ce.innerHTML = '<img class="icon-img" style="width:1em;height:1em;vertical-align:-2px" src="' + iconDataURL('coin', 22) + '" alt=""> ' + cs; }
         }
-        function tHud() {
-            const pc = document.getElementById('town-pencil'); pc.style.display = tloc === 'home' ? 'flex' : 'none'; pc.classList.remove('on');
-            document.getElementById('town-deco-bar').style.display = 'none';
+        function tEditUI() {
+            const $ = id => document.getElementById(id);
+            $('town-hanger').style.display = tDeco ? 'none' : 'flex'; $('town-pencil').style.display = tloc === 'home' && !tDeco ? 'flex' : 'none';
+            $('town-coins').style.display = tDeco ? 'none' : 'block'; $('town-exit').style.display = $('town-save').style.display = tDeco ? 'block' : 'none';
+            $('town-deco-bar').style.display = tDeco ? 'flex' : 'none';
+        }
+        function tHud() { tEditUI(); }
+        function tEditEnd(save) {
+            if (save && tDraft !== null) storage.set('homeFurn', tDraft);
+            tDraft = null; tDeco = false; tSel = null; tZoom = 1; tCullEx = tCullEy = 0; tmap = buildInt('home'); tSnap(); tEditUI();
         }
         function enterTown(first, side) {
             if (!townMap) townMap = buildTown();
             townActive = true; document.getElementById('town-hud').style.display = 'block'; document.getElementById('game-over-screen').style.display = 'none';
-            tDeco = false; tSel = null; tp.vx = tp.vy = 0; tp.jx = tp.jy = 0;
+            tDeco = false; tDraft = null; tZoom = 1; tCullEx = tCullEy = 0; tSel = null; tp.vx = tp.vy = 0; tp.jx = tp.jy = 0;
             if (first) { tloc = 'home'; tmap = buildInt('home'); tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
             else { tloc = 'town'; tmap = townMap; tp.x = side === 'east' ? 887 : -887; tp.y = 0; }
             tApply(tmap); tSnap(); tFade = 1; tFadeDir = -1; tHud();
@@ -10977,18 +11000,26 @@
         function decoBar() {
             const bar = document.getElementById('town-deco-bar'); bar.innerHTML = '';
             FURN.forEach(f => { const n = furnFree(f.id); if (n <= 0) return; const b = document.createElement('button'); b.className = 'tchip' + (tSel === f.id ? ' on' : ''); b.textContent = f.n + ' x' + n; b.onclick = () => { tSel = tSel === f.id ? null : f.id; decoBar(); }; bar.appendChild(b); });
-            if (!bar.children.length) { const sp = document.createElement('span'); sp.textContent = 'Tap anything in the room to put it back in your inventory. Buy more at the Furniture Shop!'; bar.appendChild(sp); }
+            bar.style.display = tDeco && bar.children.length ? 'flex' : 'none';
 
         }
         document.getElementById('town-hanger').onclick = () => tShop(['skins', 'hats'], 'Wardrobe');
         document.getElementById('portal-cancel').onclick = () => { document.getElementById('portal-modal').style.display = 'none'; };
         document.getElementById('portal-enter').onclick = () => { document.getElementById('portal-modal').style.display = 'none'; if (tPortalHold) tRun(tPortalHold); };
-        document.getElementById('town-pencil').onclick = () => { tDeco = !tDeco; tSel = null; document.getElementById('town-pencil').classList.toggle('on', tDeco); document.getElementById('town-deco-bar').style.display = tDeco ? 'flex' : 'none'; if (tDeco) decoBar(); };
+        document.getElementById('town-pencil').onclick = () => { if (tDeco) return; tDraft = JSON.stringify(homeList()); tDeco = true; tSel = null; tPan = { x: camera.x, y: camera.y }; tZoom = 1; tEditUI(); decoBar(); };
+        document.getElementById('town-exit').onclick = () => { document.getElementById('edit-modal').style.display = 'block'; };
+        document.getElementById('town-save').onclick = () => tEditEnd(true);
+        document.getElementById('edit-exit').onclick = () => { document.getElementById('edit-modal').style.display = 'none'; tEditEnd(false); };
+        document.getElementById('edit-save').onclick = () => { document.getElementById('edit-modal').style.display = 'none'; tEditEnd(true); };
         const tLogical = e => ({ x: e.clientX * canvas.width / window.innerWidth, y: e.clientY * canvas.height / window.innerHeight });
-        displayCanvas.addEventListener('pointerdown', e => {
-            if (!townActive) return; initAudio(); const P = tLogical(e);
+        const tPts = new Map(); let tGest = null;
+        displayCanvas.style.touchAction = 'none';
+        const tWorld = P => ({ x: (P.x - canvas.width / 2) / tZoom + canvas.width / 2 + tPan.x, y: (P.y - canvas.height / 2) / tZoom + canvas.height / 2 + tPan.y });
+        const tPDist = () => { const a = [...tPts.values()]; return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1; };
+        function tTap(e) {
+            const P = tLogical(e);
             if (tDeco && tloc === 'home') {
-                const wx = P.x + camera.x, wy = P.y + camera.y, dh = (tmap.defs || []).find(d => wx >= d.x && wx <= d.x + d.w && wy >= d.y && wy <= d.y + d.h);
+                const wp = tWorld(P), wx = wp.x, wy = wp.y, dh = (tmap.defs || []).find(d => wx >= d.x && wx <= d.x + d.w && wy >= d.y && wy <= d.y + d.h);
                 if (dh) { const l = homeList(); l.splice(dh.idx, 1); saveHome(l); tmap = buildInt('home'); decoBar(); return; }
                 const SF = tSel && FURN_BY[tSel];
                 if (SF && SF.w) {
@@ -11003,7 +11034,23 @@
                 else return;
                 saveHome(l); tmap = buildInt('home'); if (tSel && furnFree(tSel) <= 0) tSel = null; decoBar(); return;
             }
+        }
+        displayCanvas.addEventListener('pointerdown', e => {
+            if (!townActive) return; initAudio(); if (!(tDeco && tloc === 'home')) return;
+            tPts.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
+            if (tPts.size === 1) tGest = { moved: false, pinch: false, d0: 0, z0: tZoom }; else { tGest = tGest || { moved: true }; tGest.pinch = true; tGest.moved = true; tGest.d0 = tPDist(); tGest.z0 = tZoom; }
         });
+        window.addEventListener('pointermove', e => {
+            const pt = tPts.get(e.pointerId); if (!pt || !tDeco) return;
+            const dx = e.clientX - pt.x, dy = e.clientY - pt.y; pt.x = e.clientX; pt.y = e.clientY;
+            if (tPts.size >= 2) { tZoom = Math.max(.45, Math.min(1, tGest.z0 * tPDist() / tGest.d0)); return; }
+            if (Math.hypot(e.clientX - pt.sx, e.clientY - pt.sy) > 8) tGest.moved = true;
+            if (tGest.moved) { tPan.x -= dx * canvas.width / window.innerWidth / tZoom; tPan.y -= dy * canvas.height / window.innerHeight / tZoom; tPan.x = Math.max(-120 - canvas.width / 2, Math.min(620 - canvas.width / 2, tPan.x)); tPan.y = Math.max(-120 - canvas.height / 2, Math.min(320 - canvas.height / 2, tPan.y)); }
+        });
+        ['pointerup', 'pointercancel'].forEach(ev => window.addEventListener(ev, e => {
+            const pt = tPts.get(e.pointerId); if (!pt) return; const tap = ev === 'pointerup' && tGest && !tGest.moved && tPts.size === 1 && performance.now() - pt.t < 600;
+            tPts.delete(e.pointerId); if (!tPts.size) tGest = null; if (tap) tTap(e);
+        }));
         window.addEventListener('keydown', e => { if (!townActive) return; const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; tKeys[k] = 1; if (k.startsWith('Arrow')) e.preventDefault(); });
         window.addEventListener('keyup', e => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; delete tKeys[k]; });
 
