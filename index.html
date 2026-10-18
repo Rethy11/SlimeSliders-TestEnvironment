@@ -893,8 +893,8 @@
         </div>
     </div>
 
-    <!-- Tapping any skin/hat in the Skin Shop's Skins/Hats tabs (owned or still locked) opens
-         this preview: an enlarged swatch/icon, its name, and either an Equip button (owned) or
+    <!-- Tapping a still-locked skin/hat in the Skin Shop's Skins/Hats tabs opens
+         this preview (owned ones equip immediately): an enlarged swatch/icon, its name, and either an Equip button (owned) or
          a hint explaining how to unlock it (see openItemPreview). -->
     <div id="item-preview-modal" class="modal">
         <div class="modal-header">
@@ -5403,7 +5403,11 @@
                     div.className = `inv-item ${count > 0 ? '' : 'locked'} ${isEquipped ? 'equipped' : ''}`;
                     div.innerHTML = `<canvas class="shop-slime-preview" width="60" height="60" data-kind="hat" data-item-id="${h.id}"></canvas><div class="inv-name" style="font-size:${invNameFontSize(h.name)}">${h.name}</div>`;
                     if (count > 0) div.innerHTML += `<div class="inv-count">${count}</div>`;
-                    div.onclick = () => { if (isEquipped) equipItem('hat', null); else openItemPreview('hat', h.id); };
+                    div.onclick = () => {
+                        if (count <= 0) openItemPreview('hat', h.id);
+                        else if (isEquipped) equipItem('hat', null);
+                        else equipItem('hat', h.id);
+                    };
                     hatsContainer.appendChild(div);
                 });
             }
@@ -5419,7 +5423,7 @@
                     div.className = `inv-item ${count > 0 ? '' : 'locked'} ${isEquipped ? 'equipped' : ''}`;
                     div.innerHTML = `<canvas class="shop-slime-preview" width="60" height="60" data-kind="skin" data-item-id="${s.id}"></canvas><div class="inv-name" style="font-size:${invNameFontSize(displayName)}">${displayName}</div>`;
                     if (count > 0) div.innerHTML += `<div class="inv-count">${count}</div>`;
-                    div.onclick = () => openItemPreview('skin', s.id);
+                    div.onclick = () => { if (count > 0) equipItem('skin', s.id); else openItemPreview('skin', s.id); };
                     skinsContainer.appendChild(div);
                 });
             }
