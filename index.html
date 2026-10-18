@@ -649,8 +649,6 @@
         .promo-digit { display: flex; flex-direction: column; align-items: center; gap: 12px; }
         .promo-digit-value { font-family: 'Press Start 2P', sans-serif; font-size: 1.1rem; font-weight: bold; background: rgba(255,255,255,0.15); color: #ffcf33; width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.2); }
         .promo-digit-slider { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 100px; cursor: pointer; accent-color: #ffcf33; }
-        #promo-code-btn { display: block; margin: 12px auto 0 auto; font-size: 0.5rem; padding: 6px 12px; background: transparent; color: #8d99ae; border: 1px solid #8d99ae; box-shadow: none; text-transform: none; letter-spacing: 0; opacity: 0.75; }
-        #promo-code-btn:active { transform: scale(0.95); }
 
         .inventory-container { display: none; }
         .inventory-section-title { text-align: left; margin: 15px 0 10px 5px; font-size: 1.1rem; color: #ffcf33; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
@@ -805,6 +803,7 @@
             <a class="shop-item" href="about.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">About</a>
             <a class="shop-item" href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">Privacy Policy</a>
             <a class="shop-item" href="terms.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">Terms of Use</a>
+            <div class="shop-item" id="promo-code-btn" style="cursor:pointer;">Promo Codes</div>
         </div>
     </div>
 
@@ -4654,7 +4653,6 @@
 
                 <div id="skins-view" class="inventory-container" style="display: none;">
                     <div class="inventory-grid" id="inv-skins"></div>
-                    <button id="promo-code-btn">Promo Codes</button>
                 </div>
 
                 <div id="hats-view" class="inventory-container" style="display: none;">
@@ -5837,7 +5835,7 @@
                 let isNew = isFound && storage.get(seenKey) !== 'true';
                 // Unlocked-but-not-found-yet items show their real (greyed-out via .locked-entry)
                 // icon instead of a lock, so players can recognize what they're still hunting for.
-                let iconSrc = iconDataURL(isFound ? key : (isAchLocked ? 'lock' : key), 40);
+                let iconSrc = iconDataURL(isFound ? key : 'lock', 40);
                 let name = isFound ? data.name : (isAchLocked ? 'Locked Item' : 'Unknown Item');
                 let desc = isFound ? data.desc : (isAchLocked ? itemUnlockHint(key) : 'Find this item during a run to unlock its details.');
                 // Real rarity once found; unfound/locked items don't reveal it yet, so they
@@ -10654,9 +10652,10 @@
             m.tiles.forEach(t => { if (zones.some(z => t.x > z.x0 && t.x < z.x1 && t.y > z.y0 && t.y < z.y1)) t.nogo = true; });
             const tSafe = (x, y) => { for (const b of BL) if (x > b.x - 146 && x < b.x + 146 && y > b.base - 205 && y < b.base + 6) return [x, b.base + 48]; return [x, y]; };
             // trees / bushes / rocks scattered over grass, away from buildings, paths and portals
+            const KEEP = [[-60, 150], [60, 150], [-380, -30], [380, -30], [-330, -70], [-70, -80], [420, -62], [-190, 215], [-150, 330], [300, 270], [-175, -72], [175, -72], [-325, 215], [325, 215], [-250, 250], [250, 250]];
             m.tiles.forEach(t => {
                 if (t.t !== 'g' || t.far) return; const h = hh(t.q, t.r), x = t.x + (h % 31) - 15, y = t.y + ((h >> 5) % 31) - 15;
-                if (BL.some(b => Math.abs(x - b.x) < 150 && y > b.base - 230 && y < b.base + 70) || PORTALS.some(p => Math.hypot(x - p.x, y - p.y) < 130)) return;
+                if (BL.some(b => Math.abs(x - b.x) < 150 && y > b.base - 230 && y < b.base + 70) || PORTALS.some(p => Math.hypot(x - p.x, y - p.y) < 130) || KEEP.some(([kx, ky]) => Math.hypot(x - kx, y - ky) < 58)) return;
                 if (t.isl && Math.abs(t.q) < 15 && Math.abs(t.r) === 0) return;
                 const k = h % 11, pal = t.isl === 1 ? 1 : 0;
                 if (k < 3) { addC(m, x, y + 8, 14); addT(m, y + 14, (c, now) => tTree(c, x, y, 34 + h % 8, h % 3, pal, now)); }
