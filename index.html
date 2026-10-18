@@ -598,8 +598,7 @@
         #gacha-ten-overlay {
             display: none;
             position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
+            inset: 0;
             flex-direction: column;
             align-items: center;
             justify-content: center;
@@ -613,8 +612,8 @@
         }
         .gacha-ten-panel { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
         .gacha-ten-title { font-size: 1.1rem; color: #ffcf33; text-shadow: 0 2px 5px #000; text-align: center; }
-        .gacha-ten-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; width: 100%; }
-        .gacha-ten-item { background: rgba(255,255,255,0.1); border-radius: 10px; padding: 8px 4px; text-align: center; border: 2px solid transparent; position: relative; overflow: hidden; animation: gachaPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards; }
+        .gacha-ten-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; margin: 0 auto; }
+        .gacha-ten-item { flex: 0 0 calc((100% - 32px) / 5); min-width: 0; background: rgba(255,255,255,0.1); border-radius: 10px; padding: 8px 4px; text-align: center; border: 2px solid transparent; position: relative; overflow: hidden; animation: gachaPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards; }
         /* Rare pulls get the same gold treatment as the inventory grid's equipped highlight
            idiom, so a legendary result visibly pops out of the row of commons around it. */
         .gacha-ten-item.rare { border-color: #ffd700; box-shadow: 0 0 12px rgba(255,215,0,0.6); background: rgba(255,215,0,0.12); }
@@ -5337,7 +5336,7 @@
                 div.style.animationDelay = (i * 0.05) + 's';
                 div.innerHTML = `
                     ${r.isNew ? '<div class="gacha-ten-new-badge">NEW</div>' : ''}
-                    <canvas class="gacha-ten-sprite" width="96" height="96" data-category="${r.category}" data-item-id="${itemObj.id}" style="display:block; width:48px; height:48px; margin:0 auto 4px;"></canvas>
+                    <canvas class="gacha-ten-sprite" width="96" height="96" data-category="${r.category}" data-item-id="${itemObj.id}" style="display:block; width:100%; max-width:48px; height:auto; aspect-ratio:1; margin:0 auto 4px;"></canvas>
                     <div class="inv-name" style="font-size:${invNameFontSize(itemObj.name)}">${itemObj.name}</div>
                 `;
                 grid.appendChild(div);
