@@ -618,7 +618,6 @@
         /* Rare pulls get the same gold treatment as the inventory grid's equipped highlight
            idiom, so a legendary result visibly pops out of the row of commons around it. */
         .gacha-ten-item.rare { border-color: #ffd700; box-shadow: 0 0 12px rgba(255,215,0,0.6); background: rgba(255,215,0,0.12); }
-        .gacha-ten-item .inv-preview { width: 32px; height: 32px; margin: 0 auto 6px; }
         .gacha-ten-new-badge { position: absolute; top: 3px; right: 3px; background: #ff477e; color: #fff; font-size: 0.45rem; padding: 2px 4px; border-radius: 6px; font-weight: bold; box-shadow: 0 2px 3px rgba(0,0,0,0.4); z-index: 2; }
         .gacha-ten-hint { font-size: 0.65rem; color: #bdc3c7; text-align: center; }
         
@@ -668,7 +667,6 @@
         .inv-item.equipped .shop-slime-preview { filter: drop-shadow(0 0 6px #4caf50) drop-shadow(0 0 2px #4caf50); }
         .inv-item.equipped .inv-name { color: #4caf50; }
         .inv-item.locked { opacity: 0.4; filter: grayscale(100%); cursor: pointer; }
-        .inv-preview { width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 8px; border: 2px solid rgba(255,255,255,0.5); box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
         /* Little gacha-slime preview canvas that sits inside each shop tile in place of the old
            flat color swatch - see startShopPreviewAnim/drawShopPreviews. Square/rounded rather
            than circular so hats aren't clipped off the top of the render. */
@@ -893,9 +891,9 @@
         </div>
     </div>
 
-    <!-- Tapping a still-locked skin/hat in the Skin Shop's Skins/Hats tabs opens
-         this preview (owned ones equip immediately): an enlarged swatch/icon, its name, and either an Equip button (owned) or
-         a hint explaining how to unlock it (see openItemPreview). -->
+    <!-- Tapping a still-locked skin/hat in the Skin Shop's Skins/Hats tabs opens this preview:
+         an enlarged swatch/icon, its name, and a hint explaining how to unlock it (see
+         openItemPreview). Owned items equip immediately on tap instead. -->
     <div id="item-preview-modal" class="modal">
         <div class="modal-header">
             <h2 id="item-preview-title" style="color: #f1c40f;">Preview</h2>
@@ -906,7 +904,6 @@
         </div>
         <div id="item-preview-name" class="almanac-detail-name"></div>
         <div id="item-preview-desc" class="almanac-detail-desc"></div>
-        <button id="item-preview-equip-btn" class="menu-btn" style="display:none; margin-top:15px;"></button>
     </div>
 
     <div id="settings-modal" class="modal">
@@ -5285,25 +5282,67 @@
             playSFX('chest');
         }
 
+        // Draws the 10-pull result sprites with the exact same routines the gacha machine uses
+        // for its bowl slimes (drawCharacterModel for skins; bubble + drawPixelIcon for hats,
+        // at the machine's own radii of 16 / 14), so an acquired item looks identical to the one
+        // that was in the machine. Canvases are 96px backing / 48px CSS, drawn at 2x scale in
+        // the machine's 1x coordinate space. Loops only while the results overlay is showing.
+        let gachaTenSpriteAnimId = null;
+        function startGachaTenSpriteAnim() {
+            if (gachaTenSpriteAnimId) cancelAnimationFrame(gachaTenSpriteAnimId);
+            function frame() {
+                let overlay = document.getElementById('gacha-ten-overlay');
+                if (!overlay || overlay.style.display === 'none') { gachaTenSpriteAnimId = null; return; }
+                document.querySelectorAll('#gacha-ten-grid canvas.gacha-ten-sprite').forEach(canvas => {
+                    let pctx = canvas.getContext('2d');
+                    pctx.setTransform(1, 0, 0, 1, 0, 0);
+                    pctx.clearRect(0, 0, canvas.width, canvas.height);
+                    pctx.scale(2, 2);
+                    let id = canvas.dataset.itemId;
+                    if (canvas.dataset.category === 'hat') {
+                        let radius = 14;
+                        pctx.save();
+                        pctx.translate(24, 24);
+                        let bg = pctx.createRadialGradient(-radius * 0.3, -radius * 0.3, 1, 0, 0, radius);
+                        bg.addColorStop(0, 'rgba(255,255,255,0.9)');
+                        bg.addColorStop(0.4, 'rgba(200,230,255,0.5)');
+                        bg.addColorStop(1, 'rgba(120,180,255,0.35)');
+                        pctx.fillStyle = bg;
+                        pctx.beginPath(); pctx.arc(0, 0, radius, 0, Math.PI * 2); pctx.fill();
+                        pctx.strokeStyle = 'rgba(255,255,255,0.85)'; pctx.lineWidth = 1.5;
+                        pctx.beginPath(); pctx.arc(0, 0, radius, 0, Math.PI * 2); pctx.stroke();
+                        pctx.globalAlpha = 0.85; pctx.fillStyle = '#fff';
+                        pctx.beginPath(); pctx.arc(-radius * 0.35, -radius * 0.35, radius * 0.22, 0, Math.PI * 2); pctx.fill();
+                        pctx.globalAlpha = 1;
+                        drawPixelIcon(id, pctx, 0, 1, radius * 1.6);
+                        pctx.restore();
+                    } else {
+                        drawCharacterModel(24, 26, 0, 0, 16, id, false, null, pctx);
+                    }
+                });
+                gachaTenSpriteAnimId = requestAnimationFrame(frame);
+            }
+            frame();
+        }
+
         function renderGachaTenResults(results) {
             let grid = document.getElementById('gacha-ten-grid');
             if (!grid) return;
             grid.innerHTML = '';
             results.forEach((r, i) => {
                 let itemObj = r.itemData;
-                let bgStyle = r.category === 'hat' ? '#2b2d42' : (itemObj.isAnimated ? itemObj.preview : itemObj.color);
-                let previewInner = r.category === 'hat' ? `<img class="icon-img" style="width:20px;height:20px;" src="${iconDataURL(itemObj.id, 32)}" alt="">` : '';
                 let div = document.createElement('div');
                 div.className = `gacha-ten-item ${r.category === 'rare' ? 'rare' : ''}`;
                 // Staggered pop-in so all 10 results don't snap into place in one flat instant.
                 div.style.animationDelay = (i * 0.05) + 's';
                 div.innerHTML = `
                     ${r.isNew ? '<div class="gacha-ten-new-badge">NEW</div>' : ''}
-                    <div class="inv-preview" style="background:${bgStyle}; display:flex; justify-content:center; align-items:center;">${previewInner}</div>
+                    <canvas class="gacha-ten-sprite" width="96" height="96" data-category="${r.category}" data-item-id="${itemObj.id}" style="display:block; width:48px; height:48px; margin:0 auto 4px;"></canvas>
                     <div class="inv-name" style="font-size:${invNameFontSize(itemObj.name)}">${itemObj.name}</div>
                 `;
                 grid.appendChild(div);
             });
+            startGachaTenSpriteAnim();
             let overlay = document.getElementById('gacha-ten-overlay');
             if (overlay) overlay.style.display = 'flex';
             fitInvNameLabels(grid);
@@ -5591,46 +5630,23 @@
             frame();
         }
 
-        // Opens the enlarged preview modal for a tapped skin or hat tile - owned items show an
-        // Equip button (or "Equipped" if already worn); locked ones show a hint explaining how
-        // to unlock them instead. kind is 'skin' or 'hat'.
+        // Opens the enlarged preview modal for a tapped, still-locked skin or hat tile, showing a
+        // hint explaining how to unlock it (owned items equip directly from the tile instead).
+        // kind is 'skin' or 'hat'.
         function openItemPreview(kind, id) {
             let def = kind === 'skin'
                 ? (basicSkinsById.get(id) || rareSkins.find(s => s.id === id) || secretSkinsById.get(id))
                 : hats.find(h => h.id === id);
             if (!def) return;
 
-            let count = parseInt(storage.get('inv_' + id) || 0);
-            let owned = count > 0;
             let isRareOrSecret = kind === 'skin' && (rareSkins.some(s => s.id === id) || secretSkinsById.has(id));
-
-            let nameEl = document.getElementById('item-preview-name');
-            let descEl = document.getElementById('item-preview-desc');
-            let equipBtn = document.getElementById('item-preview-equip-btn');
 
             itemPreviewKind = kind;
             itemPreviewItemId = id;
             startItemPreviewAnim();
 
-            nameEl.innerText = (owned || !isRareOrSecret) ? def.name : '???';
-
-            let isEquipped = kind === 'skin' ? player.color === id : player.hat === id;
-            if (owned) {
-                descEl.innerText = isEquipped ? 'Currently equipped.' : 'Tap Equip to wear this.';
-                equipBtn.style.display = 'inline-block';
-                equipBtn.disabled = isEquipped;
-                equipBtn.innerText = isEquipped ? 'Equipped' : 'Equip';
-                equipBtn.onclick = () => {
-                    equipItem(kind, id);
-                    document.getElementById('item-preview-modal').style.display = 'none';
-                    stopItemPreviewAnim();
-                };
-            } else {
-                descEl.innerText = kind === 'skin' ? skinUnlockHint(id) : hatUnlockHint(id);
-                equipBtn.style.display = 'none';
-                equipBtn.onclick = null;
-            }
-
+            document.getElementById('item-preview-name').innerText = isRareOrSecret ? '???' : def.name;
+            document.getElementById('item-preview-desc').innerText = kind === 'skin' ? skinUnlockHint(id) : hatUnlockHint(id);
             document.getElementById('item-preview-modal').style.display = 'block';
         }
 
