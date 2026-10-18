@@ -5342,10 +5342,12 @@
                 `;
                 grid.appendChild(div);
             });
-            startGachaTenSpriteAnim();
             let overlay = document.getElementById('gacha-ten-overlay');
             if (overlay) overlay.style.display = 'flex';
             fitInvNameLabels(grid);
+            // Must start after the overlay is shown: the loop exits as soon as it sees the
+            // overlay hidden, which would leave every sprite canvas blank.
+            startGachaTenSpriteAnim();
         }
 
         function revealGachaReward(chosenItem, itemCategory) {
