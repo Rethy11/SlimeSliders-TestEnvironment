@@ -77,17 +77,20 @@
             width:100%;
         }
         .boot-screen.hide{ opacity:0; pointer-events:none; }
+        /* The overlay is a <button>, so the global `button:active { transform: scale(.95) }` was
+           squishing the whole thing - grey backdrop included. Keep the backdrop still and let only
+           the text block give the press feedback (and only before the intro has started). */
+        .boot-screen:active { transform:none; }
+        .boot-face { transition: transform 0.08s ease; }
+        .boot-screen:not(.playing):active .boot-face { transform: scale(0.95); }
+        /* Once the intro is running (fade-out + developer splash) taps do nothing visible. */
+        .boot-screen.playing { cursor:default; }
 
         .boot-face{ display:flex; flex-direction:column; align-items:center; }
         .boot-face h1{
             font-size: clamp(1.3rem, 7vh, 2rem); margin:0; letter-spacing:1px; line-height:1.4;
             text-shadow: 0 4px 0 rgba(0,0,0,0.5);
             color:#fff;
-        }
-        .boot-face .boot-tag{
-            color:#cfe9d1; font-size:0.6rem; line-height:1.8;
-            margin:16px auto 0; max-width:290px;
-            text-shadow: 0 2px 0 rgba(0,0,0,0.5);
         }
         .boot-face .boot-tap{
             margin-top:min(8vh, 56px);
@@ -718,8 +721,7 @@
     <button type="button" class="boot-screen" id="bootScreen" aria-label="Tap to play">
         <div class="boot-face" id="bootFace">
             <h1>SLIME SLIDERS</h1>
-            <p class="boot-tag">Swipe to slide, swerve past hazards, and gobble your way to the goal &mdash; one squishy level at a time.</p>
-            <div class="boot-tap">tap to begin</div>
+            <div class="boot-tap">tap to play</div>
         </div>
         <div class="studio-face" id="studioFace">
             <div class="eyes" id="studioEyes"><span></span><span></span></div>
@@ -4623,7 +4625,7 @@
         document.getElementById('unlock-star-r').src = iconDataURL('star', 20);
         document.getElementById('settings-icon-img').src = iconDataURL('gear', 32);
         document.getElementById('almanac-icon-img').src = iconDataURL('question', 32);
-        document.querySelectorAll('button').forEach(btn => { btn.addEventListener('mousedown', () => playSFX('click')); });
+        document.querySelectorAll('button').forEach(btn => { btn.addEventListener('mousedown', () => { if (btn.id === 'bootScreen' && btn.classList.contains('playing')) return; playSFX('click'); }); });
 
         function buildShopUI() {
             const container = document.getElementById('shop-items');
@@ -10517,6 +10519,9 @@
         }
 
         function playBootIntro(){
+            // Deferred so the tap that started the intro finishes dispatching normally (audio
+            // unlock etc.); every tap after it is ignored for the rest of the splash.
+            setTimeout(function(){ bootScreenEl.classList.add('playing'); }, 0);
             if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
                 dismissBootScreen();
                 return;
@@ -10557,6 +10562,11 @@
             setTimeout(dismissBootScreen, 3300);
         }
         bootScreenEl.addEventListener('click', playBootIntro, { once:true });
+        // While the intro/developer splash plays, swallow taps on the overlay so nothing else in
+        // the page reacts to them either.
+        ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click'].forEach(function(t){
+            bootScreenEl.addEventListener(t, function(e){ if (bootScreenEl.classList.contains('playing')) e.stopPropagation(); });
+        });
 
         // ==========================================
         // SECTION 10 - TOWN HUB (hex edition)
