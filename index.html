@@ -4656,7 +4656,6 @@
                 </div>
 
                 <div id="hats-view" class="inventory-container" style="display: none;">
-                    <button id="btn-remove-hat" class="menu-btn" style="background:#e74c3c; padding:8px 15px; font-size:0.9rem; margin-bottom:10px;">Remove Hat</button>
                     <div class="inventory-grid" id="inv-hats"></div>
                 </div>
             `;
@@ -4675,14 +4674,6 @@
             // click on anything else breaks the streak back to 0. (The perf overlay used to
             // piggyback on this same streak; it now toggles with equipping/unequipping
             // Corrupted Data itself - see syncPerfOverlay.)
-            document.getElementById('btn-remove-hat').addEventListener('click', () => {
-                equipItem('hat', null);
-                removeHatClickCount++;
-                if (removeHatClickCount >= 20) {
-                    removeHatClickCount = 0;
-                    unlockSecretGlitchSkin();
-                }
-            });
             
             // Re-bind the full-screen dismiss layout click listener
             let revealOverlay = document.getElementById('gacha-reveal-overlay');
@@ -4727,7 +4718,7 @@
         // is attached once at module scope (not inside buildShopUI) so it isn't re-added every
         // time the shop is opened.
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('#btn-remove-hat')) {
+            if (!e.target.closest('#inv-hats')) {
                 removeHatClickCount = 0;
             }
         });
@@ -5412,7 +5403,7 @@
                     div.className = `inv-item ${count > 0 ? '' : 'locked'} ${isEquipped ? 'equipped' : ''}`;
                     div.innerHTML = `<canvas class="shop-slime-preview" width="60" height="60" data-kind="hat" data-item-id="${h.id}"></canvas><div class="inv-name" style="font-size:${invNameFontSize(h.name)}">${h.name}</div>`;
                     if (count > 0) div.innerHTML += `<div class="inv-count">${count}</div>`;
-                    div.onclick = () => openItemPreview('hat', h.id);
+                    div.onclick = () => { if (isEquipped) equipItem('hat', null); else openItemPreview('hat', h.id); };
                     hatsContainer.appendChild(div);
                 });
             }
@@ -10676,7 +10667,7 @@
                 m.things.push({ get y() { return n.y + 14; }, fn: (c, now) => tResident(c, n, now) }); });
             // a shady, fully-occluded figure pressed against the back of the Trophy Hall
             const gl = () => { const g = t0 => [...t0].map(ch => Math.random() < .3 ? '#%&@$?!/<>01'[Math.floor(Math.random() * 12)] : ch).join(''); return ["You shouldn't be here...", g('They are watching you.'), g('ERROR: slime not found'), g('Turn back before it loads.'), g('I was deleted. You were not.')]; };
-            const sh = { n: '???', skin: 'corrupted', hat: null, x: 250, y: -250, static: true, say: [], sayFn: gl, gift: () => { unlockSecretGlitchSkin(); equipItem('skin', 'corrupted'); } };
+            const sh = { n: '???', skin: 'corrupted', hat: null, x: 250, y: -250, static: true, say: [], sayFn: gl, gift: () => { if (parseInt(storage.get('inv_corrupted') || 0) <= 0) unlockSecretGlitchSkin(); else { playSFX('secret_unlock'); showSecretUnlockToast(); } equipItem('skin', 'corrupted'); } };
             m.npcs.push(sh); addC(m, sh.x, sh.y + 6, 16); addT(m, sh.y + 24, (c, now) => tNpc(c, sh.x, sh.y, 'corrupted', null, now));
             // small interactables: mailbox, sign post, well, cat, ducks, sleeping dog, flower pots
             const tI = (x, y, r, msgs, draw, solid) => { [x, y] = tSafe(x, y); const it = { x, y, i: 0, bub: 0, msg: '', msgs }; if (solid) addC(m, x, y, r); addT(m, y + 8, (c, now) => { draw(c, x, y, now); tBubble(c, x, y - 50, it); }); m.ias = (m.ias || []).concat(it); };
