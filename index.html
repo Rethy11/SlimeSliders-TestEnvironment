@@ -5934,8 +5934,9 @@
             updateAlmanacNotifDots();
         }
 
-        // tab (optional string: 'achievements' | 'enemies' | 'items') picks which Almanac tab opens
-        // first; the Trophy Hall's book pedestals use it to jump straight to Enemies / Items.
+        // tab (optional string: 'achievements' | 'enemies' | 'items') opens the Almanac on just that
+        // page with the tab bar hidden - the Trophy Hall's trophy wall and book pedestals use it.
+        // With no tab (the corner trophy button) it opens on Achievements with all tabs shown.
         function toggleAlmanac(tab) {
             // Don't allow Almanac to open on top of Settings - it has to be closed first.
             if (document.getElementById('settings-modal').style.display === 'block') return;
@@ -5943,7 +5944,9 @@
             gameState = 'paused'; }
             else if (gameState !== 'paused') { previousState = gameState;
             gameState = 'paused'; }
-            document.getElementById('almanac-modal').style.display = 'block'; switchAlmanacTab(typeof tab === 'string' ? tab : 'achievements'); initAudio();
+            document.getElementById('almanac-modal').style.display = 'block';
+            const almTabs = document.querySelector('#almanac-modal .shop-tabs'); if (almTabs) almTabs.style.display = typeof tab === 'string' ? 'none' : '';
+            switchAlmanacTab(typeof tab === 'string' ? tab : 'achievements'); initAudio();
         }
 
         function toggleSettings() {
@@ -11018,7 +11021,7 @@
         function tAct(a) {
             tBump = performance.now() + 700;
             if (a === 'wardrobe') tShop(['skins', 'hats'], 'Wardrobe'); else if (a === 'gacha') tShop(['gacha'], 'Gacha Shop');
-            else if (a === 'trophies') toggleAlmanac(); else if (a === 'almanac_enemies') toggleAlmanac('enemies'); else if (a === 'almanac_items') toggleAlmanac('items'); else if (a === 'furn') furnOpen();
+            else if (a === 'trophies') toggleAlmanac('achievements'); else if (a === 'almanac_enemies') toggleAlmanac('enemies'); else if (a === 'almanac_items') toggleAlmanac('items'); else if (a === 'furn') furnOpen();
         }
         function tGo(loc, from) {
             if (tFadeDir || tFade) return; tFadeDir = 1;
