@@ -10674,6 +10674,10 @@
             m.npcs.forEach(n => { [n.x, n.y] = tSafe(n.x, n.y); n.hx = n.x; n.hy = n.y; n.t = hh(n.x, n.y) % 1000; n.tx = n.x; n.ty = n.y; n.w = 0; n.bub = 0; n.msg = '';
                 addC(m, n.x, n.y, 14); n.o = m.obs[m.obs.length - 1];
                 m.things.push({ get y() { return n.y + 14; }, fn: (c, now) => tResident(c, n, now) }); });
+            // a shady, fully-occluded figure pressed against the back of the Trophy Hall
+            const gl = () => { const g = t0 => [...t0].map(ch => Math.random() < .3 ? '#%&@$?!/<>01'[Math.floor(Math.random() * 12)] : ch).join(''); return ["You shouldn't be here...", g('They are watching you.'), g('ERROR: slime not found'), g('Turn back before it loads.'), g('I was deleted. You were not.')]; };
+            const sh = { n: '???', skin: 'corrupted', hat: null, x: 250, y: -250, static: true, say: [], sayFn: gl, gift: () => { unlockSecretGlitchSkin(); equipItem('skin', 'corrupted'); } };
+            m.npcs.push(sh); addC(m, sh.x, sh.y + 6, 16); addT(m, sh.y + 24, (c, now) => tNpc(c, sh.x, sh.y, 'corrupted', null, now));
             // small interactables: mailbox, sign post, well, cat, ducks, sleeping dog, flower pots
             const tI = (x, y, r, msgs, draw, solid) => { [x, y] = tSafe(x, y); const it = { x, y, i: 0, bub: 0, msg: '', msgs }; if (solid) addC(m, x, y, r); addT(m, y + 8, (c, now) => { draw(c, x, y, now); tBubble(c, x, y - 50, it); }); m.ias = (m.ias || []).concat(it); };
             tI(-330, -70, 8, ['Mail for: S. Lime.', 'Empty. Again.'], (c, x, y) => tMail(c, x, y), 1);
@@ -10817,7 +10821,7 @@
         function tNpcStep(dt) {
             const m = tmap;
             (m.npcs || []).forEach(n => {
-                n.vx = n.vy = 0; if (n.w > 0) { n.w -= dt; return; }
+                if (n.static) return; n.vx = n.vy = 0; if (n.w > 0) { n.w -= dt; return; }
                 const dx = n.tx - n.x, dy = n.ty - n.y, d = Math.hypot(dx, dy);
                 if (d < 3) { // new path: abort and redraw (max 6 tries) if it touches an off-limit tile
                     n.w = 60 + Math.random() * 180;
@@ -10939,7 +10943,7 @@
             box.style.display = 'flex'; tDlgOpen = true; player.vx = player.vy = 0; let k = 0; clearInterval(tDlgTimer); tDlgMsg = msg; tDlgTyping = true;
             tDlgTimer = setInterval(() => { k++; $('dlg-text').textContent = msg.slice(0, k); if (k >= msg.length) { clearInterval(tDlgTimer); tDlgTyping = false; } }, 28);
         }
-        function tNpcTalk(n) { const d = Math.hypot(tp.x - n.x, tp.y - n.y); if (d > 80) n.armed = true; else if (d < 40 && n.armed !== false && !tDlgOpen) tOpenDlg(n); }
+        function tNpcTalk(n) { const d = Math.hypot(tp.x - n.x, tp.y - n.y); if (n.gift && d < 40 && player.color === 'glitch') n.gift(); if (d > 80) n.armed = true; else if (d < 40 && n.armed !== false && !tDlgOpen) tOpenDlg(n); }
         function tCloseDlg() { clearInterval(tDlgTimer); tDlgTyping = false; document.getElementById('town-dlg').style.display = 'none'; tDlgOpen = false; }
         window.addEventListener('pointerdown', e => { if (tDlgOpen) { if (tDlgTyping) { clearInterval(tDlgTimer); tDlgTyping = false; document.getElementById('dlg-text').textContent = tDlgMsg; } else tCloseDlg(); e.stopPropagation(); e.preventDefault(); } }, true);
         function tApply(m) {
