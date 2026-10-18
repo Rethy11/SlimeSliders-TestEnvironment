@@ -5934,14 +5934,16 @@
             updateAlmanacNotifDots();
         }
 
-        function toggleAlmanac() {
+        // tab (optional string: 'achievements' | 'enemies' | 'items') picks which Almanac tab opens
+        // first; the Trophy Hall's book pedestals use it to jump straight to Enemies / Items.
+        function toggleAlmanac(tab) {
             // Don't allow Almanac to open on top of Settings - it has to be closed first.
             if (document.getElementById('settings-modal').style.display === 'block') return;
             if (gameState === 'playing') { previousState = gameState;
             gameState = 'paused'; }
             else if (gameState !== 'paused') { previousState = gameState;
             gameState = 'paused'; }
-            document.getElementById('almanac-modal').style.display = 'block'; switchAlmanacTab('achievements'); initAudio();
+            document.getElementById('almanac-modal').style.display = 'block'; switchAlmanacTab(typeof tab === 'string' ? tab : 'achievements'); initAudio();
         }
 
         function toggleSettings() {
@@ -10738,6 +10740,8 @@
                 const cq = T(5, 3), sayFn = () => { const L = achievementDB.filter(a => achievementRewards[a.id] && storage.get('ach_' + a.id) !== 'true').map(a => { const d = a.desc.replace(/\.\s*$/, ''); return 'You should ' + d.charAt(0).toLowerCase() + d.slice(1) + '... I heard it unlocks ' + (achievementRewards[a.id].type === 'skin' ? 'something shiny' : 'something powerful') + '.'; }); return L.length ? [L[0]] : ['You have earned every reward! I am so proud of you.', 'Check back when new trophies arrive!']; };
                 m.npcs = [{ n: 'Curator Gel', skin: 'green', hat: 'crown', x: cq.x, y: cq.y, say: [], sayFn }]; addC(m, cq.x, cq.y + 6, 24); addT(m, cq.y + 24, (cc, now) => tNpc(cc, cq.x, cq.y, 'green', 'crown', now));
                 [[1, 2], [3, 2], [5, 2]].forEach(([c, r], i) => { const p = T(c, r); addC(m, p.x, p.y + 6, 26); addT(m, p.y + 24, (cc, now) => tPed(cc, p.x, p.y, i, now)); });
+                // Almanac books on pedestals, either side of the entrance carpet - walking into one opens that Almanac tab.
+                [[2, 3, 'enemies', 'almanac_enemies'], [4, 3, 'items', 'almanac_items']].forEach(([c, r, k, act]) => { const p = T(c, r); addC(m, p.x, p.y + 6, 26, act); addT(m, p.y + 24, (cc, now) => tBookPed(cc, p.x, p.y, k, now)); });
             } else if (id === 'gacha') {
                 const p = T(3, 0); addR(m, p.x - 66, -34, 132, 70, 'gacha'); addT(m, 40, (c, now) => tGachaM(c, p.x, p.y + 20, now));
                 const n = T(1, 1); addC(m, n.x, n.y + 6, 24, 'gacha'); addT(m, n.y + 24, (c, now) => tNpc(c, n.x, n.y, 'pink', 'bow', now));
@@ -10916,6 +10920,28 @@
             [[T[0], y - 112, 12], [T[1], y - 95, 11]].forEach(([t, ty, px]) => { tFit(c, t, 150, px); const w = c.measureText(t).width + 16; c.fillStyle = '#f6e6b4'; c.strokeStyle = '#2b2d42'; c.lineWidth = 3; c.beginPath(); c.roundRect(x - w / 2, ty - 8, w, 16, 4); c.fill(); c.stroke(); c.strokeStyle = pal[1]; c.lineWidth = 1.5; c.beginPath(); c.roundRect(x - w / 2 + 2.5, ty - 5.5, w - 5, 11, 2); c.stroke(); c.fillStyle = '#3b2410'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x, ty + 1); });
             c.restore();
         }
+        // Marble pedestal with a floating Almanac book (k = 'enemies' | 'items'), same pedestal
+        // look/spotlight/sparkle idiom as tPed above.
+        function tBookPed(c, x, y, k, now) {
+            const en = k === 'enemies', i = en ? 0 : 1, pal = en ? ['#ffc2c2', '#e04848', '#7d1620'] : ['#c2e4ff', '#3f8fe0', '#16457d'];
+            const by = y - 24, fl = Math.sin(now / 520 + i * 1.6) * 3;
+            c.save(); c.lineJoin = 'round'; c.strokeStyle = '#2b2d42';
+            const sp = c.createRadialGradient(x, y + 28, 3, x, y + 28, 58); sp.addColorStop(0, 'rgba(255,238,160,.55)'); sp.addColorStop(1, 'rgba(255,238,160,0)'); c.fillStyle = sp; c.beginPath(); c.ellipse(x, y + 28, 58, 19, 0, 0, 7); c.fill();
+            const hl = c.createRadialGradient(x, by - 24 + fl, 2, x, by - 24 + fl, 40); hl.addColorStop(0, 'rgba(255,255,255,.35)'); hl.addColorStop(.5, pal[1] + '40'); hl.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = hl; c.beginPath(); c.arc(x, by - 24 + fl, 40, 0, 7); c.fill();
+            const mg = c.createLinearGradient(x - 30, 0, x + 30, 0); mg.addColorStop(0, '#d9dbe6'); mg.addColorStop(.35, '#ffffff'); mg.addColorStop(1, '#a9adc2');
+            c.lineWidth = 3; c.fillStyle = mg; c.beginPath(); c.roundRect(x - 31, y + 16, 62, 14, 3); c.fill(); c.stroke(); c.beginPath(); c.roundRect(x - 23, y - 14, 46, 32, 3); c.fill(); c.stroke(); c.beginPath(); c.roundRect(x - 28, y - 24, 56, 11, 3); c.fill(); c.stroke();
+            c.fillStyle = pal[1]; c.fillRect(x - 23, y - 12, 46, 3); c.fillRect(x - 23, y + 12, 46, 3); c.fillStyle = 'rgba(0,0,0,.08)'; for (let j = -1; j <= 1; j++) c.fillRect(x + j * 14 - 1, y - 8, 2, 20);
+            // the book: cover, darker spine, page edge, gold bands, and an emblem (monster eye / gem)
+            const cy = by - 6 + fl, g = c.createLinearGradient(x - 18, cy - 46, x + 18, cy); g.addColorStop(0, pal[0]); g.addColorStop(.55, pal[1]); g.addColorStop(1, pal[2]);
+            c.lineWidth = 3; c.fillStyle = g; c.beginPath(); c.roundRect(x - 18, cy - 46, 36, 46, 3); c.fill(); c.stroke();
+            c.fillStyle = pal[2]; c.fillRect(x - 18, cy - 46, 6, 46); c.strokeRect(x - 18, cy - 46, 6, 46);
+            c.fillStyle = '#f6efd8'; c.fillRect(x + 18, cy - 43, 4, 40); c.strokeRect(x + 18, cy - 43, 4, 40);
+            c.fillStyle = '#f2d36b'; c.fillRect(x - 12, cy - 41, 28, 3); c.fillRect(x - 12, cy - 8, 28, 3);
+            if (en) { c.fillStyle = '#fff'; c.beginPath(); c.ellipse(x + 2, cy - 24, 9, 7, 0, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#2b2d42'; c.beginPath(); c.arc(x + 3, cy - 24, 3.5, 0, 7); c.fill(); }
+            else { c.fillStyle = '#fff6c8'; c.beginPath(); c.moveTo(x + 2, cy - 34); c.lineTo(x + 11, cy - 24); c.lineTo(x + 2, cy - 14); c.lineTo(x - 7, cy - 24); c.closePath(); c.fill(); c.stroke(); }
+            for (let j = 0; j < 3; j++) { const ph = now / 380 + j * 2.1 + i, a = Math.max(0, Math.sin(ph)), sx = x + Math.cos(j * 2.4 + i) * 26, sy = by - 28 + Math.sin(j * 1.7 + i) * 22 + fl; c.globalAlpha = a; c.fillStyle = '#fff'; c.fillRect(sx - 1, sy - 4 * a - 1, 2, 8 * a + 2); c.fillRect(sx - 4 * a - 1, sy - 1, 8 * a + 2, 2); } c.globalAlpha = 1;
+            c.restore();
+        }
         function tNpc(c, x, y, skin, hat, now) { c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(x, y + 22, 22, 7, 0, 0, 7); c.fill(); drawCharacterModel(x, y + 4 + Math.sin(now / 400 + x) * 2, 0, 0, 20, skin, false, hat, c); }
         function tWall(c, m) {
             const W = m.wall; c.save(); c.lineWidth = 6; c.strokeStyle = themes[0].hazard.edge; c.fillStyle = W.col; c.beginPath(); c.rect(W.x0, -170, W.x1 - W.x0, 146); c.fill(); c.stroke();
@@ -10978,12 +11004,17 @@
             if (document.getElementById('shop-modal').style.display === 'block') return;
             toggleShop();
             ['gacha', 'skins', 'hats'].forEach(k => { const b = document.getElementById('tab-' + k); if (b) b.style.display = tabs.includes(k) ? '' : 'none'; });
+            // A single-tab shop (the Gacha Shop) has nothing to switch between, so hide the whole
+            // tab bar rather than leaving one redundant button. buildShopUI() recreates the bar
+            // every time the shop opens, so this never leaks into the Wardrobe or Skin Shop.
+            const tabBar = document.querySelector('#shop-items .shop-tabs');
+            if (tabBar) tabBar.style.display = tabs.length < 2 ? 'none' : '';
             switchShopTab(tabs[0]); document.querySelector('#shop-modal .modal-header h2').textContent = title;
         }
         function tAct(a) {
             tBump = performance.now() + 700;
             if (a === 'wardrobe') tShop(['skins', 'hats'], 'Wardrobe'); else if (a === 'gacha') tShop(['gacha'], 'Gacha Shop');
-            else if (a === 'trophies') toggleAlmanac(); else if (a === 'furn') furnOpen();
+            else if (a === 'trophies') toggleAlmanac(); else if (a === 'almanac_enemies') toggleAlmanac('enemies'); else if (a === 'almanac_items') toggleAlmanac('items'); else if (a === 'furn') furnOpen();
         }
         function tGo(loc, from) {
             if (tFadeDir || tFade) return; tFadeDir = 1;
