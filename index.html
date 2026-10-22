@@ -10612,14 +10612,25 @@
         ];
         HZ.forEach((h, i) => { h.id = 'hz' + i; });
         HZ[5].locked = 1; HZ[5].slime.say = ['I locked myself out.', 'The key is... somewhere.'];
-        Object.assign(HZ[0], { fl: ['#d9b98a', '#cfae7d'], wl: '#f0e0c4', dd: '#6c5ce7', room: { N: 5, R: 5, npc: [3, 2], items: [['bed', 0, 0], ['shelf', 3, 0], ['plant', 4, 0], ['lamp', 4, 2], ['rug', 2, 2], ['chair', 1, 3]] }, say: ['Welcome to my loft!', 'The bed is up in the rafters. Figuratively.'] });
-        Object.assign(HZ[1], { fl: ['#f6c6d9', '#efb6cc'], wl: '#fff1d6', dd: '#e74c8c', room: { N: 5, R: 4, npc: [3, 2], items: [['table', 2, 1], ['chair', 1, 1], ['chair', 3, 1], ['plant', 0, 0], ['plant', 4, 0], ['lamp', 4, 2], ['rug', 2, 2]] }, say: ['Tea? It is mushroom tea.', 'Mind the spots on the ceiling.'] });
-        Object.assign(HZ[2], { fl: ['#bfe6f5', '#aedcf0'], wl: '#e6f6ff', dd: '#2b8fb0', room: { N: 7, R: 5, npc: [2, 2], items: [['tank', 1, 0], ['sofa', 3, 0], ['tank', 5, 0], ['plant', 0, 0], ['plant', 6, 0], ['lamp', 6, 2], ['table', 0, 2], ['rug', 3, 2]] }, say: ['I collect fish tanks.', 'Blub blub. That is fish for hello.'] });
-        Object.assign(HZ[3], { fl: ['#9cd0b8', '#8cc4aa'], wl: '#f3e6d8', dd: '#2ca58d', room: { N: 7, R: 6, npc: [2, 2], items: [['shelf', 0, 0], ['tv', 2, 0], ['sofa', 4, 0], ['shelf', 6, 0], ['rug', 3, 2], ['chair', 1, 3], ['chair', 5, 3], ['plant', 0, 4], ['plant', 6, 4]] }, say: ['Movie night!', 'Mochi is not a snack. Probably.'] });
-        Object.assign(HZ[4], { fl: ['#c98a5a', '#bd7d4d'], wl: '#f2c9bd', dd: '#8a3a2e', room: { N: 7, R: 5, npc: [2, 2], items: [['bed', 0, 0], ['shelf', 3, 0], ['table', 5, 1], ['chair', 4, 1], ['chair', 6, 1], ['lamp', 6, 3], ['rug', 3, 3]] }, say: ['Welcome to the barn.', 'Hay is for horses. I just like it.'] });
         const ALLB = BL.concat(HZ);
         const PORTALS = [{ x: -1496, y: 0, mode: 'classic', side: 'west', label: 'CLASSIC', col: '#5dffb0' }, { x: 1496, y: 0, mode: 'endless', side: 'east', label: 'ENDLESS', col: '#c77dff' }];
         const TNAME = { town: 'Slime Town', home: 'Home', trophy: 'Trophy Hall', gacha: 'Gacha Shop', furn: 'Furniture Shop' };
+        // Grid-built interiors. ' ' = void, '.' = floor, E = exit mat, U/D = stairs up/down, n = resident, letters = furniture (GK).
+        const GK = { p: 'plant', s: 'shelf', t: 'table', h: 'chair', l: 'lamp', g: 'rug', b: 'bed', k: 'tank', f: 'sofa', v: 'tv' };
+        Object.assign(HZ[0], { say: ['Welcome to my A-frame!', 'The attic is up the stairs.'], floors: {
+            main: { f: ['#d9b98a', '#cfae7d'], wl: '#f0e0c4', dd: '#6c5ce7', rows: ['pU..sl..', '.gg..h..', '.gg.t..n', '....    ', 'l..p    ', '.E..    '] },
+            up:   { f: ['#c9a574', '#bd9867'], wl: '#e7d3ad', dd: '#4b3a9b', rows: ['  .b.l  ', ' .gg..p ', 'tD...g..', '........'] } } });
+        Object.assign(HZ[1], { say: ['Tea? It is mushroom tea.', 'The cellar is full of spores.'], floors: {
+            main: { f: ['#f6c6d9', '#efb6cc'], wl: '#fff1d6', dd: '#e74c8c', rows: ['  p..l', ' ..ht..', '..g.g.n.', ' ..D...', '   .E.'] },
+            down: { f: ['#9a8aa8', '#8c7c9c'], wl: '#c9bfd6', dd: '#4a3a5e', rows: ['sU.     s.t', '...     ...', '...........', '..l     l..'] } } });
+        Object.assign(HZ[2], { say: ['I collect fish tanks.', 'Blub blub. That is fish for hello.'], floors: {
+            main: { f: ['#bfe6f5', '#aedcf0'], wl: '#e6f6ff', dd: '#2b8fb0', rows: ['pf.l  k.k.p', '..g.  ..n..', '.h.t  ...g.', '...........', '     .E.'] } } });
+        Object.assign(HZ[3], { say: ['Movie night!', 'Mochi is not a snack. Probably.'], floors: {
+            main: { f: ['#9cd0b8', '#8cc4aa'], wl: '#f3e6d8', dd: '#2ca58d', rows: ['   sv.fs', '  .......', '.h.g.n.g.h', 'p.........', '    ..E..'] } } });
+        Object.assign(HZ[4], { say: ['Welcome to the barn.', 'The hayloft is upstairs.'], floors: {
+            main: { f: ['#c98a5a', '#bd7d4d'], wl: '#f2c9bd', dd: '#8a3a2e', rows: ['sU.l..ts', '...g....', '.h..n..h', '  ......', '   ..E.'] },
+            up:   { f: ['#d8b66a', '#cca95b'], wl: '#ecd9a0', dd: '#8a6a2e', rows: ['b.s..p', '.gg..D', ' ......', '  ....'] } } });
+        HZ.forEach(h => { const n = h.slime.n; TNAME[h.id] = n + "'s House"; TNAME[h.id + 'a'] = h.id === 'hz0' ? 'Attic' : 'Hayloft'; TNAME[h.id + 'b'] = 'Cellar'; });
         let townActive = false, townMap = null, tmap = null, tloc = 'home';
         let tp = { get x() { return player.worldX; }, set x(v) { player.worldX = player.prevWorldX = v; }, get y() { return player.worldY; }, set y(v) { player.worldY = player.prevWorldY = v; }, get vx() { return player.vx; }, set vx(v) { player.vx = v; }, get vy() { return player.vy; }, set vy(v) { player.vy = v; }, get jx() { return player.jiggleForceX; }, set jx(v) { player.jiggleForceX = v; }, get jy() { return player.jiggleForceY; }, set jy(v) { player.jiggleForceY = v; } }, tFade = 0, tFadeDir = 0, tFadeCb = null, tPtr = null, tBump = 0, tLast = 0;
         let tDeco = false, tSel = null, tHit = null, tCam = { cx: 0, cy: 0 }, tScr = { x: 0, y: 0 }, lastRunSide = 'west', tHintShown = false;
@@ -10747,7 +10758,33 @@
             [[-15, 0, -1], [13, 0, 1]].forEach(([q0]) => { const x0 = axialToPixel(q0, 0).x; addT(m, -1e9, c => tRails(c, x0, -1)); addT(m, 1e9 - 1, c => tRails(c, x0, 1)); });
             return finish(m, 140);
         }
+        function tStairs(c, x, y, up) {
+            c.save(); c.translate(x, y); c.lineWidth = 3; c.strokeStyle = '#2b2d42';
+            if (up) { for (let i = 0; i < 4; i++) { c.fillStyle = ['#d9b27c', '#c99f68', '#b88c56', '#a67b48'][i]; c.fillRect(-28 + i * 3, -26 + i * 12, 56 - i * 6, 12); c.strokeRect(-28 + i * 3, -26 + i * 12, 56 - i * 6, 12); } c.fillStyle = '#fff'; c.beginPath(); c.moveTo(0, -18); c.lineTo(-8, -6); c.lineTo(8, -6); c.closePath(); c.fill(); }
+            else { c.fillStyle = '#1d1830'; c.fillRect(-28, -22, 56, 44); c.strokeRect(-28, -22, 56, 44); for (let i = 0; i < 3; i++) { c.fillStyle = ['#5a4a6e', '#463858', '#32284a'][i]; c.fillRect(-24 + i * 4, -18 + i * 10, 48 - i * 8, 8); } c.fillStyle = '#fff'; c.beginPath(); c.moveTo(0, 14); c.lineTo(-8, 3); c.lineTo(8, 3); c.closePath(); c.fill(); }
+            c.restore();
+        }
+        function buildGrid(id, hz) {
+            const fk = id === hz.id ? 'main' : id.endsWith('a') ? 'up' : 'down', F = hz.floors[fk], rows = F.rows, m = mkMap(); m.id = id; m.arr = {};
+            const T = (c, r) => axialToPixel(-Math.floor(r / 2) + c, r), fl = (c, r) => ((rows[r] || '')[c] || ' ') !== ' '; m.T = T;
+            const cellT = (c, r) => m.land.get(hexKey(-Math.floor(r / 2) + c, r)), stairs = [];
+            rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const k = row[c]; if (k === ' ') continue; const t = addTile(m, -Math.floor(r / 2) + c, r, 'i', { col: (c + r) % 2 ? F.f[0] : F.f[1] });
+                if (k === 'E' || k === 'U' || k === 'D') { t.t = 'm'; t.col = null; t.cell = [c, r, k]; if (k !== 'E') { t.to = k === 'U' ? (fk === 'down' ? hz.id : hz.id + 'a') : (fk === 'up' ? hz.id : hz.id + 'b'); stairs.push(t); } else m.ec = [c, r]; } } });
+            const nb = (c, r, first) => { for (const [dc, dr] of first === 'n' ? [[0, -1], [0, 1], [-1, 0], [1, 0]] : [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (fl(c + dc, r + dr) && cellT(c + dc, r + dr).t === 'i') return T(c + dc, r + dr); return T(c, r); };
+            if (m.ec) m.spawn = nb(m.ec[0], m.ec[1], 'n'); stairs.forEach(t => { m.arr[t.to] = nb(t.cell[0], t.cell[1], 's'); addT(m, -5e8, c => tStairs(c, t.x, t.y, t.cell[2] === 'U')); });
+            if (!m.spawn) m.spawn = m.arr[Object.keys(m.arr)[0]];
+            m.walls = []; rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { if (row[c] === ' ') continue; const ev = r % 2 === 0, n1 = ev ? fl(c - 1, r - 1) : fl(c, r - 1), n2 = ev ? fl(c, r - 1) : fl(c + 1, r - 1); if (!n1 && !n2) m.walls.push({ c, r, x: T(c, r).x, y: T(c, r).y }); } });
+            const ws = new Set(m.walls.map(w => w.c + ',' + w.r)); m.walls.forEach(w => { w.l = !ws.has((w.c - 1) + ',' + w.r); w.rt = !ws.has((w.c + 1) + ',' + w.r); });
+            m.wall = { x0: -1e5, x1: 1e5, col: F.wl, dado: F.dd };
+            const arts = ['slime', 'tree', 'heart', 'star', 'sun'];
+            rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const k = row[c], q = T(c, r), f = GK[k];
+                if (f) { const Fu = FURN_BY[f]; if (Fu.s) addC(m, q.x, q.y + 6, 26); addT(m, Fu.s ? q.y + 24 : -5e8, cc => drawFurn(cc, Fu, q.x, q.y, 1)); }
+                else if (k === 'n') { const sl = hz.slime; m.npcs = [{ n: sl.n, skin: sl.skin, hat: sl.hat, x: q.x, y: q.y, say: hz.say }]; addC(m, q.x, q.y + 6, 24); addT(m, q.y + 24, (cc, now) => tNpc(cc, q.x, q.y, sl.skin, sl.hat, now)); } } });
+            m.art = []; m.walls.forEach(w => { if ((w.c + w.r) % 4 === 1) m.art.push([w.x, arts[(w.c * 3 + w.r) % 5], w.y]); });
+            return finish(m, 140);
+        }
         function buildInt(id) {
+            { const g = HZ.find(h => id.startsWith(h.id) && h.floors); if (g) return buildGrid(id, g); }
             const m = mkMap(); m.id = id;
             // N = columns across the room, K = its centre column, R = rows deep. The Trophy Hall is
             // about twice as deep (10 rows) as the other interiors (5); everything below is placed
@@ -11092,7 +11129,16 @@
             c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(x + ox, y + oy + 22, 22, 7, 0, 0, 7); c.fill();
             drawCharacterModel(x + ox, y + oy + 4 - hop + Math.sin(now / 400 + x) * 2, vx, vy, 20, skin, !still, hat, c);
         }
+        function tWallG(c, m) {
+            const W = m.wall; c.save(); const edge = themes[0].hazard.edge;
+            m.walls.forEach(w => { const x0 = w.x - 41.6, y = w.y; c.fillStyle = W.col; c.fillRect(x0, y - 170, 83.8, 146); c.fillStyle = 'rgba(0,0,0,.05)'; c.fillRect(x0 + 10, y - 170, 26, 146); c.fillStyle = W.dado; c.fillRect(x0, y - 62, 83.8, 38); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(x0, y - 62, 83.8, 5);
+                if ((w.c + w.r) % 4 === 3) { const x = w.x; c.lineWidth = 4; c.strokeStyle = '#2b2d42'; c.fillStyle = '#8ed1f5'; c.fillRect(x - 28, y - 144, 56, 56); c.strokeRect(x - 28, y - 144, 56, 56); c.beginPath(); c.moveTo(x, y - 144); c.lineTo(x, y - 88); c.moveTo(x - 28, y - 116); c.lineTo(x + 28, y - 116); c.stroke(); }
+                c.lineWidth = 6; c.strokeStyle = edge; c.beginPath(); c.moveTo(x0, y - 170); c.lineTo(x0 + 83.2, y - 170); if (w.l) { c.moveTo(x0, y - 170); c.lineTo(x0, y - 24); } if (w.rt) { c.moveTo(x0 + 83.2, y - 170); c.lineTo(x0 + 83.2, y - 24); } c.stroke(); });
+            (m.art || []).forEach(a => { c.save(); c.translate(0, a[2]); tPix(c, a[0], a[1]); c.restore(); });
+            c.restore();
+        }
         function tWall(c, m) {
+            if (m.walls) return tWallG(c, m);
             const W = m.wall; c.save(); c.lineWidth = 6; c.strokeStyle = themes[0].hazard.edge; c.fillStyle = W.col; c.beginPath(); c.rect(W.x0, -170, W.x1 - W.x0, 146); c.fill(); c.stroke();
             c.fillStyle = 'rgba(0,0,0,.05)'; for (let x = W.x0 + 20; x < W.x1; x += 52) c.fillRect(x, -170, 26, 146);
             c.fillStyle = W.dado; c.fillRect(W.x0, -62, W.x1 - W.x0, 38); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(W.x0, -62, W.x1 - W.x0, 5);
@@ -11186,7 +11232,7 @@
             if (tFadeDir || tFade) return; tFadeDir = 1;
             tFadeCb = () => {
                 tloc = loc; tmap = loc === 'town' ? townMap : buildInt(loc); tApply(tmap); tDeco = false; tDraft = null; tZoom = 1; tCullEx = tCullEy = 0; tSel = null;
-                if (loc === 'town') { const b = ALLB.find(b => b.id === from); tp.x = b.x; tp.y = b.base + 36; } else { tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
+                if (loc === 'town') { const b = ALLB.find(b => b.id === from); tp.x = b.x; tp.y = b.base + 36; } else { const a = (tmap.arr && tmap.arr[from]) || tmap.spawn; tp.x = a.x; tp.y = a.y; }
                 tp.vx = tp.vy = 0; tp.jx = tp.jy = 0; tSnap(); tHud();
             };
         }
@@ -11231,7 +11277,7 @@
                     if (tloc === 'town') {
                         const b = ALLB.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
                         if (b) { if (!b.locked) tGo(b.id); else { const nw = performance.now(); if (nw > (b.bub || 0)) { b.msg = 'It’s locked…'; b.bub = nw + 2200; } } } else if (p) { if (tPortalHold !== p) tPortalAsk(p); } else tPortalHold = null;
-                    } else { const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)); if (t && t.t === 'm') tGo('town', tloc); }
+                    } else { const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)); if (t && t.t === 'm') tGo(t.to || 'town', tloc); }
                 }
             }
             const ce = document.getElementById('town-coins'), cs = String(totalCoins);
