@@ -10610,6 +10610,14 @@
             { x: 620,  base: 420,  w: 190, h: 100, style: 'barn',     wall: '#d65a4a', roof: '#7f8c8d', tex: 'plank',  win: 'sq',    dt: 'double', door: '#f4e3b2', flowerbox: 1,     slime: { n: 'Barnaby', skin: 'orange', hat: 'cowboy', dx: 80, say: ['Yeehaw.', 'No cows. Only slimes.'] } },
             { x: -760, base: 150,  w: 150, h: 100, style: 'gable',    wall: '#e6e0f8', roof: '#9b59b6', tex: 'stone',  win: 'tall',  dt: 'arch',  door: '#4b1d86', turret: 1, extras: ['lantern'], slime: { n: 'Gooey', skin: 'green', hat: 'tophat', dx: 70, say: ['I live in a tiny castle.', 'Mind the turret.'] } }
         ];
+        HZ.forEach((h, i) => { h.id = 'hz' + i; });
+        HZ[5].locked = 1; HZ[5].slime.say = ['I locked myself out.', 'The key is... somewhere.'];
+        Object.assign(HZ[0], { fl: ['#d9b98a', '#cfae7d'], wl: '#f0e0c4', dd: '#6c5ce7', room: { N: 5, R: 5, npc: [3, 2], items: [['bed', 0, 0], ['shelf', 3, 0], ['plant', 4, 0], ['lamp', 4, 2], ['rug', 2, 2], ['chair', 1, 3]] }, say: ['Welcome to my loft!', 'The bed is up in the rafters. Figuratively.'] });
+        Object.assign(HZ[1], { fl: ['#f6c6d9', '#efb6cc'], wl: '#fff1d6', dd: '#e74c8c', room: { N: 5, R: 4, npc: [3, 2], items: [['table', 2, 1], ['chair', 1, 1], ['chair', 3, 1], ['plant', 0, 0], ['plant', 4, 0], ['lamp', 4, 2], ['rug', 2, 2]] }, say: ['Tea? It is mushroom tea.', 'Mind the spots on the ceiling.'] });
+        Object.assign(HZ[2], { fl: ['#bfe6f5', '#aedcf0'], wl: '#e6f6ff', dd: '#2b8fb0', room: { N: 7, R: 5, npc: [2, 2], items: [['tank', 1, 0], ['sofa', 3, 0], ['tank', 5, 0], ['plant', 0, 0], ['plant', 6, 0], ['lamp', 6, 2], ['table', 0, 2], ['rug', 3, 2]] }, say: ['I collect fish tanks.', 'Blub blub. That is fish for hello.'] });
+        Object.assign(HZ[3], { fl: ['#9cd0b8', '#8cc4aa'], wl: '#f3e6d8', dd: '#2ca58d', room: { N: 7, R: 6, npc: [2, 2], items: [['shelf', 0, 0], ['tv', 2, 0], ['sofa', 4, 0], ['shelf', 6, 0], ['rug', 3, 2], ['chair', 1, 3], ['chair', 5, 3], ['plant', 0, 4], ['plant', 6, 4]] }, say: ['Movie night!', 'Mochi is not a snack. Probably.'] });
+        Object.assign(HZ[4], { fl: ['#c98a5a', '#bd7d4d'], wl: '#f2c9bd', dd: '#8a3a2e', room: { N: 7, R: 5, npc: [2, 2], items: [['bed', 0, 0], ['shelf', 3, 0], ['table', 5, 1], ['chair', 4, 1], ['chair', 6, 1], ['lamp', 6, 3], ['rug', 3, 3]] }, say: ['Welcome to the barn.', 'Hay is for horses. I just like it.'] });
+        const ALLB = BL.concat(HZ);
         const PORTALS = [{ x: -1496, y: 0, mode: 'classic', side: 'west', label: 'CLASSIC', col: '#5dffb0' }, { x: 1496, y: 0, mode: 'endless', side: 'east', label: 'ENDLESS', col: '#c77dff' }];
         const TNAME = { town: 'Slime Town', home: 'Home', trophy: 'Trophy Hall', gacha: 'Gacha Shop', furn: 'Furniture Shop' };
         let townActive = false, townMap = null, tmap = null, tloc = 'home';
@@ -10683,7 +10691,7 @@
                 addR(m, b.x - 100, b.base - 70, 70, 62); addR(m, b.x + 30, b.base - 70, 70, 62); addR(m, b.x - 30, b.base - 70, 60, 18);
                 addT(m, b.base, (c, now) => tBuilding(c, b, now));
             });
-            HZ.forEach(h => { const e = h.turret ? 30 : 0; addR(m, h.x - h.w / 2 - e, h.base - h.h, h.w + e, h.h - 4); addT(m, h.base, (c, now) => tHouse(c, h, now)); });
+            HZ.forEach(h => { const e = h.turret ? 30 : 0; addR(m, h.x - h.w / 2 - e, h.base - h.h, h.w / 2 - 30 + e, h.h - 8); addR(m, h.x + 30, h.base - h.h, h.w / 2 - 30, h.h - 8); addR(m, h.x - 30, h.base - h.h, 60, h.h - 52); addT(m, h.base, (c, now) => { tHouse(c, h, now); tBubble(c, h.x, h.base - h.h - 30, h); }); });
             // tiles behind/under houses are marked off-limits for entity pathing (checked cheaply per tile)
             const zn = b => { const hw = (b.w || 200) / 2 + 26 + (b.turret ? 30 : 0); return { x0: b.x - hw, x1: b.x + hw, y0: b.base - (b.h || 110) - 95, y1: b.base + 6 }; }; const zones = BL.concat(HZ).map(zn);
             m.tiles.forEach(t => { if (zones.some(z => t.x > z.x0 && t.x < z.x1 && t.y > z.y0 && t.y < z.y1)) t.nogo = true; });
@@ -10707,7 +10715,7 @@
                 { n: 'Old Bloop', skin: 'green', hat: 'cowboy', x: 330, y: -72, hx: 330, hy: -72, r: 30, say: ['Back in my day, levels were flat.', 'Zzz... oh. Hello.', 'Try ENDLESS. If you dare.'] },
                 { n: 'Dot', skin: 'yellow', hat: 'beanie', x: 120, y: 260, hx: 120, hy: 260, r: 50, say: ['Sniff the flowers!', 'The garden grows every day.', 'Shh, the bees are working.'] }
             ];
-            HZ.forEach(h => { const s = h.slime; m.npcs.push({ n: s.n, skin: s.skin, hat: s.hat, x: h.x + s.dx, y: h.base + 52, hx: h.x + s.dx, hy: h.base + 52, r: 16, say: s.say }); });
+            HZ.filter(h => h.locked).forEach(h => { const s = h.slime; m.npcs.push({ n: s.n, skin: s.skin, hat: s.hat, x: h.x + s.dx, y: h.base + 52, hx: h.x + s.dx, hy: h.base + 52, r: 16, say: s.say }); });
             m.npcs.forEach(n => { [n.x, n.y] = tSafe(n.x, n.y); n.hx = n.x; n.hy = n.y; n.r = Math.round((n.r || 40) * 1.7); n.t = hh(n.x, n.y) % 1000; n.tx = n.x; n.ty = n.y; n.w = 0; n.bub = 0; n.msg = '';
                 addC(m, n.x, n.y, 14); n.o = m.obs[m.obs.length - 1];
                 m.things.push({ get y() { return n.y + 14; }, fn: (c, now) => tResident(c, n, now) }); });
@@ -10744,11 +10752,12 @@
             // N = columns across the room, K = its centre column, R = rows deep. The Trophy Hall is
             // about twice as deep (10 rows) as the other interiors (5); everything below is placed
             // relative to N / K / R.
-            const N = 7, K = (N - 1) / 2, R = id === 'trophy' ? 10 : 5;
+            const hz = HZ.find(h => h.id === id), N = hz ? hz.room.N : { home: 7, trophy: 9, gacha: 5, furn: 11 }[id], K = (N - 1) / 2, R = hz ? hz.room.R : { home: 5, trophy: 10, gacha: 7, furn: 5 }[id];
             for (let r = 0; r < R; r++) for (let c = 0; c < N; c++) addTile(m, -Math.floor(r / 2) + c, r, 'i', { col: (c + r) % 2 ? { home: '#c9955c', trophy: '#cfd3dc', gacha: '#f3b6d2', furn: '#a9c6ea' }[id] : { home: '#bf8a52', trophy: '#bcc1cd', gacha: '#eaa3c6', furn: '#98b8e0' }[id] });
             const T = (c, r) => axialToPixel(-Math.floor(r / 2) + c, r);
             m.T = T; m.exitT = m.land.get(hexKey(K - Math.floor((R - 1) / 2), R - 1)); m.exitT.t = 'm'; m.exitT.col = null; m.spawn = T(K, R - 2);
             const W = { x0: T(0, 0).x - 46, x1: T(N - 1, 0).x + 46 }; m.wall = Object.assign(W, { col: { home: '#ecd9b0', trophy: '#e4e0f0', gacha: '#fbd9e8', furn: '#d4e4f7' }[id], dado: { home: '#8d6038', trophy: '#7a6aa8', gacha: '#c94b8c', furn: '#3a6ab0' }[id] });
+            if (hz) { m.tiles.forEach(t => { if (t.t === 'i') t.col = (t.q + Math.floor(t.r / 2) + t.r) % 2 ? hz.fl[0] : hz.fl[1]; }); m.wall.col = hz.wl; m.wall.dado = hz.dd; }
             const mid = (T(0, 0).x + T(N - 1, 0).x) / 2;
             const D = (k, c, r) => { const q = T(c, r), F = FURN_BY[k]; if (F.s) addC(m, q.x, q.y + 6, 26); addT(m, F.s ? q.y + 24 : -5e8, cc => drawFurn(cc, F, q.x, q.y, 1)); };
             if (id === 'home') {
@@ -10766,6 +10775,10 @@
                     if (f.id === 'bed') DF(idx, t.x - 44, t.y - 24, 150, 120);
                 });
                 if (mirs.length) m.wallFn = c => mirs.forEach(x => tMirror(c, x, -88));
+            } else if (hz) {
+                hz.room.items.forEach(a => D(...a)); const n = T(...hz.room.npc), sl = hz.slime;
+                m.npcs = [{ n: sl.n, skin: sl.skin, hat: sl.hat, x: n.x, y: n.y, say: hz.say }]; addC(m, n.x, n.y + 6, 24); addT(m, n.y + 24, (cc, now) => tNpc(cc, n.x, n.y, sl.skin, sl.hat, now));
+                m.art = [[20, 'slime'], [T(N - 1, 0).x - 6, ['heart', 'star', 'sun', 'tree'][hz.x % 4 < 0 ? 0 : Math.abs(hz.x) % 4]]];
             } else if (id === 'trophy') {
                 m.wallFn = c => tCase(c, W); addR(m, T(0, 0).x - 30, -30, T(N - 1, 0).x - T(0, 0).x + 60, 50, 'trophies');
                 for (let r = 0; r < R - 1; r++) { const t = m.land.get(hexKey(-Math.floor(r / 2) + K, r)); if (t) t.col = '#a8343a'; }
@@ -10776,15 +10789,17 @@
                 // Almanac books on pedestals, either side of the entrance carpet - walking into one opens that Almanac tab.
                 [[K - 1, 6, 'enemies', 'almanac_enemies'], [K + 1, 6, 'items', 'almanac_items']].forEach(([c, r, k, act]) => { const p = T(c, r); addC(m, p.x, p.y + 6, 26, act); addT(m, p.y + 24, (cc, now) => tBookPed(cc, p.x, p.y, k, now)); });
             } else if (id === 'gacha') {
-                const p = T(3, 0); addR(m, p.x - 66, -34, 132, 70, 'gacha'); addT(m, 40, (c, now) => tGachaM(c, p.x, p.y + 20, now));
+                // narrow, deep boutique: machine at the back, a queue lane up the middle, lounge nooks either side
+                const p = T(K, 0); addR(m, p.x - 66, -34, 132, 70, 'gacha'); addT(m, 40, (c, now) => tGachaM(c, p.x, p.y + 20, now));
                 const n = T(1, 1); addC(m, n.x, n.y + 6, 24, 'gacha'); addT(m, n.y + 24, (c, now) => tNpc(c, n.x, n.y, 'orange', 'party', now));
-                [[0, 3], [6, 3], [0, 0], [6, 0]].forEach(([c, r]) => { const q = T(c, r); addC(m, q.x, q.y + 6, 24); addT(m, q.y + 24, cc => drawFurn(cc, FURN_BY.plant, q.x, q.y, 1)); });
-                [['rug', 3, 2], ['table', 5, 2], ['chair', 4, 2], ['chair', 6, 2], ['lamp', 5, 0], ['shelf', 1, 0]].forEach(a => D(...a)); m.art = [[20, 'slime'], [490, 'tree']];
+                [['plant', 0, 0], ['plant', 4, 0], ['plant', 4, 1], ['lamp', 0, 2], ['shelf', 4, 2], ['rug', 2, 3], ['rug', 2, 5], ['table', 0, 4], ['chair', 1, 4], ['table', 4, 4], ['chair', 3, 4], ['lamp', 0, 5]].forEach(a => D(...a));
+                m.art = [[20, 'slime'], [T(4, 0).x - 6, 'tree']];
             } else if (id === 'furn') {
-                [['sofa', 0, 0], ['plant', 1, 0], ['lamp', 5, 0], ['tv', 6, 0]].forEach(([k, c, r]) => { const q = T(c, r); addC(m, q.x, q.y + 6, 26); addT(m, q.y + 24, cc => drawFurn(cc, FURN_BY[k], q.x, q.y, 1)); });
-                const a = T(2, 2), b = T(4, 2); addR(m, a.x - 50, a.y - 24, b.x - a.x + 100, 54, 'furn'); addT(m, a.y + 30, c => tCounter(c, a.x - 50, a.y - 24, b.x - a.x + 100));
-                [['shelf', 2, 0], ['shelf', 4, 0], ['chair', 0, 2], ['chair', 6, 2], ['plant', 0, 3], ['plant', 6, 3], ['rug', 1, 3], ['rug', 5, 3]].forEach(a => D(...a)); m.art = [[20, 'sun'], [250, 'star'], [490, 'heart']];
-                const n = T(3, 1); addC(m, n.x, n.y + 6, 24, 'furn'); addT(m, n.y + 24, (c, now) => tNpc(c, n.x, n.y, 'teal', 'cap', now));
+                // wide showroom: furniture displays along the back, a central counter, display islands at the sides
+                [['sofa', 0, 0], ['plant', 1, 0], ['shelf', 3, 0], ['tv', 5, 0], ['shelf', 7, 0], ['lamp', 9, 0], ['plant', 10, 0], ['tank', 9, 2], ['sofa', 1, 2]].forEach(([k, c, r]) => { const q = T(c, r); addC(m, q.x, q.y + 6, 26); addT(m, q.y + 24, cc => drawFurn(cc, FURN_BY[k], q.x, q.y, 1)); });
+                const a = T(4, 2), b = T(6, 2); addR(m, a.x - 50, a.y - 24, b.x - a.x + 100, 54, 'furn'); addT(m, a.y + 30, c => tCounter(c, a.x - 50, a.y - 24, b.x - a.x + 100));
+                [['chair', 0, 2], ['chair', 10, 2], ['plant', 0, 3], ['plant', 10, 3], ['rug', 2, 3], ['rug', 8, 3], ['table', 8, 1]].forEach(a => D(...a)); m.art = [[20, 'sun'], [332, 'star'], [498, 'heart'], [800, 'slime']];
+                const n = T(5, 1); addC(m, n.x, n.y + 6, 24, 'furn'); addT(m, n.y + 24, (c, now) => tNpc(c, n.x, n.y, 'teal', 'cap', now));
             }
             return finish(m, 150);
         }
@@ -11171,7 +11186,7 @@
             if (tFadeDir || tFade) return; tFadeDir = 1;
             tFadeCb = () => {
                 tloc = loc; tmap = loc === 'town' ? townMap : buildInt(loc); tApply(tmap); tDeco = false; tDraft = null; tZoom = 1; tCullEx = tCullEy = 0; tSel = null;
-                if (loc === 'town') { const b = BL.find(b => b.id === from); tp.x = b.x; tp.y = b.base + 36; } else { tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
+                if (loc === 'town') { const b = ALLB.find(b => b.id === from); tp.x = b.x; tp.y = b.base + 36; } else { tp.x = tmap.spawn.x; tp.y = tmap.spawn.y; }
                 tp.vx = tp.vy = 0; tp.jx = tp.jy = 0; tSnap(); tHud();
             };
         }
@@ -11210,12 +11225,12 @@
                 else if (tFadeDir < 0 && tFade <= 0) { tFade = 0; tFadeDir = 0; }
             }
             if (!modalOpen && tFadeDir !== 1) {
-                if (tloc === 'trophy') (tmap.npcs || []).forEach(tNpcTalk);
+                if (tloc !== 'town') (tmap.npcs || []).forEach(tNpcTalk);
                 if (tloc === 'town') { tNpcStep(1); const nw = performance.now(); (tmap.npcs || []).forEach(tNpcTalk); (tmap.ias || []).forEach(it => { if (it.msgs.length && Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
                 if (tFadeDir === 0 && tFade === 0) {
                     if (tloc === 'town') {
-                        const b = BL.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
-                        if (b) tGo(b.id); else if (p) { if (tPortalHold !== p) tPortalAsk(p); } else tPortalHold = null;
+                        const b = ALLB.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
+                        if (b) { if (!b.locked) tGo(b.id); else { const nw = performance.now(); if (nw > (b.bub || 0)) { b.msg = 'It’s locked…'; b.bub = nw + 2200; } } } else if (p) { if (tPortalHold !== p) tPortalAsk(p); } else tPortalHold = null;
                     } else { const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)); if (t && t.t === 'm') tGo('town', tloc); }
                 }
             }
