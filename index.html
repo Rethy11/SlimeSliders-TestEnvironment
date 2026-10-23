@@ -10621,8 +10621,8 @@
             main: { f: ['#d9b98a', '#cfae7d'], wl: '#f0e0c4', dd: '#6c5ce7', rows: ['pU..sl..', '.gg..h..', '.gg.t..n', '....    ', 'l..p    ', '.E..    '] },
             up:   { f: ['#c9a574', '#bd9867'], wl: '#e7d3ad', dd: '#4b3a9b', rows: ['  .b.l  ', ' .gg..p ', 'tD...g..', '........'] } } });
         Object.assign(HZ[1], { say: ['Tea? It is mushroom tea.', 'The cellar is full of spores.'], floors: {
-            main: { f: ['#f6c6d9', '#efb6cc'], wl: '#fff1d6', dd: '#e74c8c', rows: ['  p..l', ' ..ht..', '..g.g.n.', ' ..D...', '   .E.'] },
-            down: { f: ['#9a8aa8', '#8c7c9c'], wl: '#c9bfd6', dd: '#4a3a5e', rows: ['sU.     s.t', '...     ...', '...........', '..l     l..'] } } });
+            main: { f: ['#f6c6d9', '#efb6cc'], wl: '#fff1d6', dd: '#e74c8c', rows: ['  pD.l', ' ..ht..', '..g.g.n.', ' ......', '   .E.'] },
+            down: { f: ['#9a8aa8', '#8c7c9c'], wl: '#c9bfd6', dd: '#4a3a5e', rows: ['sU.     ..s.', '...     ....', '............', '..l     l..l'] } }, key: { c: 10, r: 0, floor: 'down' } });
         Object.assign(HZ[2], { say: ['I collect fish tanks.', 'Blub blub. That is fish for hello.'], floors: {
             main: { f: ['#bfe6f5', '#aedcf0'], wl: '#e6f6ff', dd: '#2b8fb0', rows: ['pf.l  k.k.p', '..g.  ..n..', '.h.t  ...g.', '...........', '     .E.'] } } });
         Object.assign(HZ[3], { say: ['Movie night!', 'Mochi is not a snack. Probably.'], floors: {
@@ -10630,7 +10630,11 @@
         Object.assign(HZ[4], { say: ['Welcome to the barn.', 'The hayloft is upstairs.'], floors: {
             main: { f: ['#c98a5a', '#bd7d4d'], wl: '#f2c9bd', dd: '#8a3a2e', rows: ['sU.l..ts', '...g....', '.h..n..h', '  ......', '   ..E.'] },
             up:   { f: ['#d8b66a', '#cca95b'], wl: '#ecd9a0', dd: '#8a6a2e', rows: ['b.s..p', '.gg..D', ' ......', '  ....'] } } });
-        HZ.forEach(h => { const n = h.slime.n; TNAME[h.id] = n + "'s House"; TNAME[h.id + 'a'] = h.id === 'hz0' ? 'Attic' : 'Hayloft'; TNAME[h.id + 'b'] = 'Cellar'; });
+        Object.assign(HZ[5], { floors: { main: { dark: 1, nowin: 1, f: ['#2a2038', '#251c32'], wl: '#3a2d52', dd: '#1c1428', rows: ['    ...', '  ..c.c..', '  ...xx...', ' ..cxSxc..', '  ...xx...', '  ..c.c..', '    ...', '     E'] } } });
+        let tKey = false; try { tKey = localStorage.getItem('slimeKey') === '1'; } catch (e) { }
+        const tKeyB = { msg: 'Found a key!', bub: 0 };
+        const CULT = [['Shhh. The ritual has begun.', 'We are the Order of the Ooze.'], ['The sludge calls to us.', 'Do not step on the sigil.'], ['Blessed be the Blob.', 'Our slimes shall rise.'], ['You were not meant to find this place.', '...but you may stay. Quietly.'], ['Hmmmmm... hmmmmm...'], ['The lake remembers.', 'Join the chant, or leave.']];
+        HZ.forEach(h => { const n = h.slime.n; TNAME[h.id] = n + "'s House"; TNAME[h.id + 'a'] = h.id === 'hz0' ? 'Attic' : 'Hayloft'; TNAME[h.id + 'b'] = 'Cellar'; }); TNAME.hz5 = 'The Sanctum';
         let townActive = false, townMap = null, tmap = null, tloc = 'home';
         let tp = { get x() { return player.worldX; }, set x(v) { player.worldX = player.prevWorldX = v; }, get y() { return player.worldY; }, set y(v) { player.worldY = player.prevWorldY = v; }, get vx() { return player.vx; }, set vx(v) { player.vx = v; }, get vy() { return player.vy; }, set vy(v) { player.vy = v; }, get jx() { return player.jiggleForceX; }, set jx(v) { player.jiggleForceX = v; }, get jy() { return player.jiggleForceY; }, set jy(v) { player.jiggleForceY = v; } }, tFade = 0, tFadeDir = 0, tFadeCb = null, tPtr = null, tBump = 0, tLast = 0;
         let tDeco = false, tSel = null, tHit = null, tCam = { cx: 0, cy: 0 }, tScr = { x: 0, y: 0 }, lastRunSide = 'west', tHintShown = false;
@@ -10758,6 +10762,35 @@
             [[-15, 0, -1], [13, 0, 1]].forEach(([q0]) => { const x0 = axialToPixel(q0, 0).x; addT(m, -1e9, c => tRails(c, x0, -1)); addT(m, 1e9 - 1, c => tRails(c, x0, 1)); });
             return finish(m, 140);
         }
+        function tCandle(c, x, y, now) {
+            const f = Math.sin(now / 90 + x) * 1.5; c.save(); c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(x, y + 10, 12, 5, 0, 0, 7); c.fill();
+            c.lineWidth = 3; c.strokeStyle = '#2b2d42'; c.fillStyle = '#efe6d0'; c.fillRect(x - 5, y - 14, 10, 22); c.strokeRect(x - 5, y - 14, 10, 22); c.fillStyle = '#d8cbb0'; c.fillRect(x + 1, y - 14, 3, 12);
+            c.fillStyle = 'rgba(255,170,60,.3)'; c.beginPath(); c.arc(x, y - 26, 12 + f, 0, 7); c.fill(); c.fillStyle = '#ffb347'; c.beginPath(); c.ellipse(x + f * .4, y - 25, 4, 8 + f * .5, 0, 0, 7); c.fill(); c.fillStyle = '#fff2b0'; c.beginPath(); c.ellipse(x + f * .4, y - 23, 2, 4, 0, 0, 7); c.fill(); c.restore();
+        }
+        function tSigil(c, x, y, now) {
+            c.save(); c.translate(x, y); const pu = .5 + Math.sin(now / 500) * .15; c.fillStyle = 'rgba(110,0,40,.28)'; c.beginPath(); c.arc(0, 0, 128, 0, 7); c.fill();
+            c.strokeStyle = 'rgba(255,70,110,' + pu + ')'; c.lineWidth = 3; [128, 112, 18].forEach(r => { c.beginPath(); c.arc(0, 0, r, 0, 7); c.stroke(); });
+            for (let t = 0; t < 2; t++) { c.beginPath(); for (let i = 0; i < 3; i++) { const a = t * Math.PI / 3 + i * Math.PI * 2 / 3 - Math.PI / 2; c[i ? 'lineTo' : 'moveTo'](Math.cos(a) * 112, Math.sin(a) * 112); } c.closePath(); c.stroke(); }
+            c.lineWidth = 2; for (let i = 0; i < 24; i++) { const a = i * Math.PI / 12; c.beginPath(); c.moveTo(Math.cos(a) * 114, Math.sin(a) * 114); c.lineTo(Math.cos(a) * 126, Math.sin(a) * 126); c.stroke(); }
+            for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 - Math.PI / 2; c.beginPath(); c.arc(Math.cos(a) * 112, Math.sin(a) * 112, 8, 0, 7); c.stroke(); }
+            c.fillStyle = 'rgba(255,90,120,' + (pu + .2) + ')'; c.beginPath(); c.arc(0, 0, 7, 0, 7); c.fill(); c.restore();
+        }
+        function tCultist(c, x, y, now, ph) {
+            const b = Math.sin(now / 450 + ph) * 3; c.save(); c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(x, y + 16, 20, 7, 0, 0, 7); c.fill(); c.lineWidth = 3; c.strokeStyle = '#120a1e'; c.fillStyle = '#4a2a6e';
+            c.beginPath(); c.moveTo(x - 22, y + 16); c.quadraticCurveTo(x - 24, y - 6 + b, x - 8, y - 22 + b); c.quadraticCurveTo(x, y - 34 + b, x + 8, y - 22 + b); c.quadraticCurveTo(x + 24, y - 6 + b, x + 22, y + 16); c.closePath(); c.fill(); c.stroke();
+            c.fillStyle = '#1a0f2c'; c.beginPath(); c.ellipse(x, y - 8 + b, 11, 12, 0, 0, 7); c.fill(); c.fillStyle = '#ffe66b'; [-4, 4].forEach(d => { c.beginPath(); c.ellipse(x + d, y - 9 + b, 2, 3, 0, 0, 7); c.fill(); }); c.restore();
+        }
+        let tDarkC = null;
+        function tDarkness(c, m, now) {
+            const cv = tDarkC || (tDarkC = document.createElement('canvas')); if (cv.width !== canvas.width || cv.height !== canvas.height) { cv.width = canvas.width; cv.height = canvas.height; }
+            const d = cv.getContext('2d'); d.globalCompositeOperation = 'source-over'; d.clearRect(0, 0, cv.width, cv.height); d.fillStyle = 'rgba(6,2,14,.87)'; d.fillRect(0, 0, cv.width, cv.height); d.globalCompositeOperation = 'destination-out';
+            m.lights.concat([{ x: tp.x, y: tp.y - 10, r: 75 }]).forEach(l => { const x = l.x - camera.x, y = l.y - camera.y, r = l.r * (1 + Math.sin(now / 170 + l.x) * .04), g = d.createRadialGradient(x, y, 4, x, y, r); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); d.fillStyle = g; d.beginPath(); d.arc(x, y, r, 0, 7); d.fill(); });
+            c.drawImage(cv, camera.x, camera.y);
+        }
+        function tKeySprite(c, x, y, now) {
+            c.save(); c.translate(x, y); c.rotate(-.2); c.lineWidth = 3; c.strokeStyle = '#6b4a00'; c.fillStyle = '#ffd54f'; c.beginPath(); c.arc(-14, 0, 6, 0, 7); c.stroke(); c.fillRect(-9, -2, 24, 4); c.strokeRect(-9, -2, 24, 4); c.fillRect(8, 2, 4, 6); c.fillRect(13, 2, 4, 5);
+            const sp = (Math.sin(now / 300) + 1) / 2; c.fillStyle = 'rgba(255,255,255,' + (.4 + sp * .5) + ')'; c.beginPath(); c.arc(-19, -5, 1.5 + sp * 1.5, 0, 7); c.fill(); c.restore();
+        }
         function tStairs(c, x, y, up) {
             c.save(); c.translate(x, y); c.lineWidth = 3; c.strokeStyle = '#2b2d42';
             if (up) { for (let i = 0; i < 4; i++) { c.fillStyle = ['#d9b27c', '#c99f68', '#b88c56', '#a67b48'][i]; c.fillRect(-28 + i * 3, -26 + i * 12, 56 - i * 6, 12); c.strokeRect(-28 + i * 3, -26 + i * 12, 56 - i * 6, 12); } c.fillStyle = '#fff'; c.beginPath(); c.moveTo(0, -18); c.lineTo(-8, -6); c.lineTo(8, -6); c.closePath(); c.fill(); }
@@ -10773,14 +10806,19 @@
             const nb = (c, r, first) => { for (const [dc, dr] of first === 'n' ? [[0, -1], [0, 1], [-1, 0], [1, 0]] : [[0, 1], [0, -1], [-1, 0], [1, 0]]) if (fl(c + dc, r + dr) && cellT(c + dc, r + dr).t === 'i') return T(c + dc, r + dr); return T(c, r); };
             if (m.ec) m.spawn = nb(m.ec[0], m.ec[1], 'n'); stairs.forEach(t => { m.arr[t.to] = nb(t.cell[0], t.cell[1], 's'); addT(m, -5e8, c => tStairs(c, t.x, t.y, t.cell[2] === 'U')); });
             if (!m.spawn) m.spawn = m.arr[Object.keys(m.arr)[0]];
-            m.walls = []; rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { if (row[c] === ' ') continue; const ev = r % 2 === 0, n1 = ev ? fl(c - 1, r - 1) : fl(c, r - 1), n2 = ev ? fl(c, r - 1) : fl(c + 1, r - 1); if (!n1 && !n2) m.walls.push({ c, r, x: T(c, r).x, y: T(c, r).y }); } });
+            m.nowin = F.nowin; m.lights = []; m.walls = []; rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { if (row[c] === ' ') continue; const ev = r % 2 === 0, n1 = ev ? fl(c - 1, r - 1) : fl(c, r - 1), n2 = ev ? fl(c, r - 1) : fl(c + 1, r - 1); if (!n1 && !n2) m.walls.push({ c, r, x: T(c, r).x, y: T(c, r).y }); } });
             const ws = new Set(m.walls.map(w => w.c + ',' + w.r)); m.walls.forEach(w => { w.l = !ws.has((w.c - 1) + ',' + w.r); w.rt = !ws.has((w.c + 1) + ',' + w.r); });
             m.wall = { x0: -1e5, x1: 1e5, col: F.wl, dado: F.dd };
             const arts = ['slime', 'tree', 'heart', 'star', 'sun'];
             rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const k = row[c], q = T(c, r), f = GK[k];
                 if (f) { const Fu = FURN_BY[f]; if (Fu.s) addC(m, q.x, q.y + 6, 26); addT(m, Fu.s ? q.y + 24 : -5e8, cc => drawFurn(cc, Fu, q.x, q.y, 1)); }
-                else if (k === 'n') { const sl = hz.slime; m.npcs = [{ n: sl.n, skin: sl.skin, hat: sl.hat, x: q.x, y: q.y, say: hz.say }]; addC(m, q.x, q.y + 6, 24); addT(m, q.y + 24, (cc, now) => tNpc(cc, q.x, q.y, sl.skin, sl.hat, now)); } } });
-            m.art = []; m.walls.forEach(w => { if ((w.c + w.r) % 4 === 1) m.art.push([w.x, arts[(w.c * 3 + w.r) % 5], w.y]); });
+                else if (k === 'c') { addC(m, q.x, q.y + 6, 14); addT(m, q.y + 20, (cc, now) => tCandle(cc, q.x, q.y, now)); m.lights.push({ x: q.x, y: q.y - 8, r: 135 }); }
+                else if (k === 'S') { addT(m, -5e8, (cc, now) => tSigil(cc, q.x, q.y, now)); m.lights.push({ x: q.x, y: q.y, r: 175 }); }
+                else if (k === 'x') { m.npcs = m.npcs || []; const i = m.npcs.length; m.npcs.push({ n: 'Hooded Slime', skin: 'corrupted', hat: null, x: q.x, y: q.y, say: CULT[i % CULT.length] }); addC(m, q.x, q.y + 6, 22); addT(m, q.y + 24, (cc, now) => tCultist(cc, q.x, q.y, now, i * 1.7)); }
+                else if (k === 'n') { const sl = hz.slime; (m.npcs = m.npcs || []).push({ n: sl.n, skin: sl.skin, hat: sl.hat, x: q.x, y: q.y, say: hz.say }); addC(m, q.x, q.y + 6, 24); addT(m, q.y + 24, (cc, now) => tNpc(cc, q.x, q.y, sl.skin, sl.hat, now)); } } });
+            if (hz.key && fk === hz.key.floor) { const q = T(hz.key.c, hz.key.r); m.keyPos = { x: q.x - 38, y: q.y - 4 }; addT(m, q.y + 20, (cc, now) => { if (!tKey) tKeySprite(cc, q.x - 24, q.y - 4, now); }); addT(m, 1e9 - 1, cc => tBubble(cc, tp.x, tp.y - 50, tKeyB)); }
+            if (F.dark) addT(m, 1e9, (cc, now) => tDarkness(cc, m, now));
+            m.art = []; if (!F.nowin) m.walls.forEach(w => { if ((w.c + w.r) % 4 === 1) m.art.push([w.x, arts[(w.c * 3 + w.r) % 5], w.y]); });
             return finish(m, 140);
         }
         function buildInt(id) {
@@ -11132,7 +11170,7 @@
         function tWallG(c, m) {
             const W = m.wall; c.save(); const edge = themes[0].hazard.edge;
             m.walls.forEach(w => { const x0 = w.x - 41.6, y = w.y; c.fillStyle = W.col; c.fillRect(x0, y - 170, 83.8, 146); c.fillStyle = 'rgba(0,0,0,.05)'; c.fillRect(x0 + 10, y - 170, 26, 146); c.fillStyle = W.dado; c.fillRect(x0, y - 62, 83.8, 38); c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(x0, y - 62, 83.8, 5);
-                if ((w.c + w.r) % 4 === 3) { const x = w.x; c.lineWidth = 4; c.strokeStyle = '#2b2d42'; c.fillStyle = '#8ed1f5'; c.fillRect(x - 28, y - 144, 56, 56); c.strokeRect(x - 28, y - 144, 56, 56); c.beginPath(); c.moveTo(x, y - 144); c.lineTo(x, y - 88); c.moveTo(x - 28, y - 116); c.lineTo(x + 28, y - 116); c.stroke(); }
+                if (!m.nowin && (w.c + w.r) % 4 === 3) { const x = w.x; c.lineWidth = 4; c.strokeStyle = '#2b2d42'; c.fillStyle = '#8ed1f5'; c.fillRect(x - 28, y - 144, 56, 56); c.strokeRect(x - 28, y - 144, 56, 56); c.beginPath(); c.moveTo(x, y - 144); c.lineTo(x, y - 88); c.moveTo(x - 28, y - 116); c.lineTo(x + 28, y - 116); c.stroke(); }
                 c.lineWidth = 6; c.strokeStyle = edge; c.beginPath(); c.moveTo(x0, y - 170); c.lineTo(x0 + 83.2, y - 170); if (w.l) { c.moveTo(x0, y - 170); c.lineTo(x0, y - 24); } if (w.rt) { c.moveTo(x0 + 83.2, y - 170); c.lineTo(x0 + 83.2, y - 24); } c.stroke(); });
             (m.art || []).forEach(a => { c.save(); c.translate(0, a[2]); tPix(c, a[0], a[1]); c.restore(); });
             c.restore();
@@ -11271,12 +11309,13 @@
                 else if (tFadeDir < 0 && tFade <= 0) { tFade = 0; tFadeDir = 0; }
             }
             if (!modalOpen && tFadeDir !== 1) {
-                if (tloc !== 'town') (tmap.npcs || []).forEach(tNpcTalk);
+                if (tmap.keyPos && !tKey && Math.hypot(tp.x - tmap.keyPos.x, tp.y - tmap.keyPos.y) < 28) { tKey = true; try { localStorage.setItem('slimeKey', '1'); } catch (e) { } tKeyB.bub = performance.now() + 2500; }
+            if (tloc !== 'town') (tmap.npcs || []).forEach(tNpcTalk);
                 if (tloc === 'town') { tNpcStep(1); const nw = performance.now(); (tmap.npcs || []).forEach(tNpcTalk); (tmap.ias || []).forEach(it => { if (it.msgs.length && Math.hypot(tp.x - it.x, tp.y - it.y) < 40 && nw > it.bub - 1500) { it.msg = it.msgs[(it.i = it.i + 1) % it.msgs.length]; it.bub = nw + 2400; } }); }
                 if (tFadeDir === 0 && tFade === 0) {
                     if (tloc === 'town') {
                         const b = ALLB.find(b => Math.abs(tp.x - b.x) < 30 && tp.y > b.base - 70 && tp.y < b.base + 6), p = PORTALS.find(p => Math.hypot(tp.x - p.x, tp.y - p.y) < 55);
-                        if (b) { if (!b.locked) tGo(b.id); else { const nw = performance.now(); if (nw > (b.bub || 0)) { b.msg = 'It’s locked…'; b.bub = nw + 2200; } } } else if (p) { if (tPortalHold !== p) tPortalAsk(p); } else tPortalHold = null;
+                        if (b) { if (!b.locked || tKey) tGo(b.id); else { const nw = performance.now(); if (nw > (b.bub || 0)) { b.msg = 'It’s locked…'; b.bub = nw + 2200; } } } else if (p) { if (tPortalHold !== p) tPortalAsk(p); } else tPortalHold = null;
                     } else { const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)); if (t && t.t === 'm') tGo(t.to || 'town', tloc); }
                 }
             }
