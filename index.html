@@ -2978,7 +2978,22 @@
         function isSafe(x, y) {
             let h = pixelToAxial(x, y);
             let tile = hexTiles.get(hexKey(h.q, h.r));
-            return !!tile && tile.type === 'land' && !(townActive && tile.t === 'z');
+            // tile.t === 'z' is Slime Town's toxic sludge lake (a land-typed tile that is still a hazard).
+            return !!tile && tile.type === 'land' && tile.t !== 'z';
+        }
+
+        // The hazard check itself (formerly inline in update()): while the player hovers over
+        // sky/water/lava/etc. the hazard timer ticks up with the splash, HAZARD warning and red
+        // vignette, and onFall() fires once it reaches hazardLimit seconds. Shared by the normal
+        // game (onFall = game over) and Slime Town (onFall = back to the house).
+        function tickHazard(warnUI, hazardLimit, onFall) {
+            if (!isSafe(player.worldX, player.worldY) && !isOnDock(player.worldX, player.worldY) && !isPlayerInvulnerable()) {
+                if (player.hazardTimer === 0) spawnSplash(player.worldX, player.worldY);
+                player.hazardTimer += 1/60;
+                if (player.hazardTimer > 0.2) warnUI.style.display = 'block';
+                updateHazardVignette(player.hazardTimer / hazardLimit);
+                if (player.hazardTimer >= hazardLimit) onFall();
+            } else { player.hazardTimer = 0; warnUI.style.display = 'none'; updateHazardVignette(0); }
         }
 
         // True only for the open sky beyond the map's edge (no tile at all) - unlike isSafe,
@@ -6273,20 +6288,6 @@
             }
         }
 
-        // The one hazard routine: hovering over a hazard (or open sky) builds hazardTimer, shows the
-        // warning + vignette, and calls onFall() once it reaches hazardLimit seconds. Used by the
-        // levels (game over) and by the town (sent home, with a longer limit).
-        function updatePlayerHazard(hazardLimit, onFall) {
-            let warnUI = document.getElementById('hazard-warning');
-            if (!isSafe(player.worldX, player.worldY) && !isOnDock(player.worldX, player.worldY) && !isPlayerInvulnerable()) {
-                if (player.hazardTimer === 0) spawnSplash(player.worldX, player.worldY);
-                player.hazardTimer += 1/60;
-                if (player.hazardTimer > 0.2) warnUI.style.display = 'block';
-                updateHazardVignette(player.hazardTimer / hazardLimit);
-                if (player.hazardTimer >= hazardLimit) onFall();
-            } else { player.hazardTimer = 0; warnUI.style.display = 'none'; updateHazardVignette(0); }
-        }
-
         // Drives the dramatic "10, 9, 8..." countdown in the final ten seconds of the level timer,
         // plus the danger stinger that goes with it. The countdown pop only restarts when the
         // displayed second actually changes; setMusicDanger() itself no-ops on repeat calls, so
@@ -6622,7 +6623,7 @@
                 // boot overlay has real gameplay visible behind it instead of a static scene.
                 if (gameState === 'title' && attractMode) updateAttractDemo();
                 player.worldX += player.vx; player.worldY += player.vy; player.vx *= friction; player.vy *= friction;
-                if (townActive) townCollide();
+                if (townActive) { townCollide(); townHazard(); }
                 if (Math.abs(player.vx) + Math.abs(player.vy) > 0.3) player.facing = Math.atan2(player.vy, player.vx);
                 if (!isDragging) { player.jiggleForceX *= -0.8; player.jiggleForceY *= -0.8; }
                 camera.x += (player.worldX - canvas.width / 2 - camera.x) * 0.15;
@@ -6881,7 +6882,7 @@
                     // Roguelite: Wings item extends how long you can hover over a hazard before falling.
                     let wingsStacks = runItems.wings || 0;
                     let hazardLimit = 1.25 + (wingsStacks > 0 ? 0.5 + (wingsStacks - 1) * 0.25 : 0);
-                    updatePlayerHazard(hazardLimit, () => triggerGameOver('hazard'));
+                    tickHazard(warnUI, hazardLimit, () => triggerGameOver('hazard'));
 
                     if (!isBossGauntletLevel || bossGauntletUnlocked) {
                         timeLeft -= 1/60;
@@ -10611,12 +10612,12 @@
         ];
         // Decorative homes: no interior / gameplay, just scenery that houses a slime resident.
         const HZ = [
-            { x: -720, base: -300, w: 150, h: 90,  style: 'steep',    wall: '#e8c9a0', roof: '#6c5ce7', tex: 'plank',  win: 'round', dt: 'sq',    door: '#5a3515', flowerbox: 1, extras: ['lantern'], slime: { n: 'Jelly',  skin: 'blue',   hat: 'beanie',  dx: 62,  say: ['Hi there, friend!', 'Slime Town is the best town.'] } },
+            { x: -720, base: -300, w: 150, h: 90,  style: 'steep',    wall: '#e8c9a0', roof: '#6c5ce7', tex: 'plank',  win: 'round', dt: 'sq',    door: '#5a3515', flowerbox: 1, extras: ['lantern'], slime: { n: 'Jelly',  skin: 'blue',   hat: 'beanie',  dx: 62,  say: ['Squish squish!', 'Have you pet the cat yet?'] } },
             { x: -480, base: -480, w: 140, h: 80,  style: 'mushroom', wall: '#fff1d6', roof: '#e74c8c', tex: 'stucco', win: 'round', dt: 'round', door: '#8e5a2b', extras: ['steps'],   slime: { n: 'Shroom', skin: 'pink',   hat: null,      dx: -60, say: ['I live in a mushroom.', 'Do not eat the roof.'] } },
             { x: 480,  base: -500, w: 160, h: 90,  style: 'dome',     wall: '#cfeeff', roof: '#48c9e8', tex: 'siding', win: 'arch',  dt: 'arch',  door: '#2b6cb0', extras: ['awning'],  slime: { n: 'Bubbles', skin: 'teal',  hat: 'bow',     dx: 66,  say: ['My house is a bubble!', 'Pop pop. Just kidding.'] } },
             { x: 740,  base: -300, w: 180, h: 95,  style: 'hip',      wall: '#f3d9c4', roof: '#2ca58d', tex: 'brick',  win: 'shut',  dt: 'sq',    door: '#7a4a24', extras: ['porch', 'ivy'], slime: { n: 'Mochi', skin: 'yellow', hat: 'cap', dx: -74, say: ['Mochi time.', 'Nice weather for a slide.'] } },
             { x: 620,  base: 420,  w: 190, h: 100, style: 'barn',     wall: '#d65a4a', roof: '#7f8c8d', tex: 'plank',  win: 'sq',    dt: 'double', door: '#f4e3b2', flowerbox: 1,     slime: { n: 'Barnaby', skin: 'orange', hat: 'cowboy', dx: 80, say: ['Yeehaw.', 'No cows. Only slimes.'] } },
-            { x: -760, base: 150,  w: 150, h: 100, style: 'gable',    wall: '#e6e0f8', roof: '#9b59b6', tex: 'stone',  win: 'tall',  dt: 'arch',  door: '#4b1d86', turret: 1, extras: ['lantern'], slime: { n: 'Castle', skin: 'green', hat: null, dx: 70, say: [] } }
+            { x: -760, base: 150,  w: 150, h: 100, style: 'gable',    wall: '#e6e0f8', roof: '#9b59b6', tex: 'stone',  win: 'tall',  dt: 'arch',  door: '#4b1d86', turret: 1, extras: ['lantern'], slime: { n: 'Gooey', skin: 'green', hat: 'tophat', dx: 70, say: ['I live in a tiny castle.', 'Mind the turret.'] } }
         ];
         HZ.forEach((h, i) => { h.id = 'hz' + i; });
         HZ[5].locked = 1;
@@ -10625,12 +10626,12 @@
         const TNAME = { town: 'Slime Town', home: 'Home', trophy: 'Trophy Hall', gacha: 'Gacha Shop', furn: 'Furniture Shop' };
         // Grid-built interiors. ' ' = void, '.' = floor, E = exit mat, U/D = stairs up/down, n = resident, letters = furniture (GK).
         const GK = { p: 'plant', s: 'shelf', t: 'table', h: 'chair', l: 'lamp', g: 'rug', b: 'bed', k: 'tank', f: 'sofa', v: 'tv' };
-        Object.assign(HZ[0], { say: ['Nice to see a friendly face!', 'Have you pet the cat yet?'], floors: {
+        Object.assign(HZ[0], { say: ['Squish squish!', 'Have you pet the cat yet?'], floors: {
             main: { f: ['#d9b98a', '#cfae7d'], wl: '#f0e0c4', dd: '#6c5ce7', rows: ['pU..sl..', '.gg..h..', '.gg.t..n', '....    ', 'l..p    ', '.E..    '] },
             up:   { f: ['#c9a574', '#bd9867'], wl: '#e7d3ad', dd: '#4b3a9b', rows: ['  .b.l  ', ' .gg..p ', 'tD...g..', '........'] } } });
         Object.assign(HZ[1], { say: ['Tea? It is mushroom tea.', 'The cellar is full of spores.'], floors: {
             main: { f: ['#f6c6d9', '#efb6cc'], wl: '#fff1d6', dd: '#e74c8c', rows: ['  pD.l', ' ..ht..', '..g.g.n.', ' ......', '   .E.'] },
-            down: { f: ['#9a8aa8', '#8c7c9c'], wl: '#c9bfd6', dd: '#4a3a5e', rows: ['sU.     ...s', '...     ....', '............', '..l     l..l'] } }, key: { c: 11, r: 0, floor: 'down' } });
+            down: { f: ['#9a8aa8', '#8c7c9c'], wl: '#c9bfd6', dd: '#4a3a5e', rows: ['sU.     ....', '...     ....', '............', '..l     l..l'] } }, key: { c: 0, r: 0, floor: 'down' } });
         Object.assign(HZ[2], { say: ['I collect fish tanks.', 'Blub blub. That is fish for hello.'], floors: {
             main: { f: ['#bfe6f5', '#aedcf0'], wl: '#e6f6ff', dd: '#2b8fb0', rows: ['pf.l  k.k.p', '..g.  ..n..', '.h.t  ...g.', '...........', '     .E.'] } } });
         Object.assign(HZ[3], { say: ['Movie night!', 'Mochi is not a snack. Probably.'], floors: {
@@ -10795,12 +10796,11 @@
             c.drawImage(cv, camera.x, camera.y);
         }
         function tKeySprite(c, x, y, now) {
-            const sp = (Math.sin(now / 300) + 1) / 2; c.save(); c.translate(x, y); c.rotate(-.2);
-            c.fillStyle = 'rgba(255,200,40,' + (.18 + sp * .14) + ')'; c.beginPath(); c.arc(0, 0, 26, 0, 7); c.fill();
-            const g = c.createLinearGradient(-20, -8, 18, 10); g.addColorStop(0, '#fff3a0'); g.addColorStop(.4, '#ffc400'); g.addColorStop(1, '#d98a00');
-            c.lineWidth = 3; c.strokeStyle = '#6b4a00'; c.fillStyle = g; c.beginPath(); c.arc(-14, 0, 7, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#6b4a00'; c.beginPath(); c.arc(-14, 0, 2.5, 0, 7); c.fill();
-            c.fillStyle = g; c.fillRect(-8, -2.5, 24, 5); c.strokeRect(-8, -2.5, 24, 5); c.fillRect(8, 2, 4, 7); c.strokeRect(8, 2, 4, 7); c.fillRect(13, 2, 4, 5); c.strokeRect(13, 2, 4, 5);
-            c.fillStyle = 'rgba(255,255,255,' + (.45 + sp * .5) + ')'; c.beginPath(); c.arc(-17, -4, 1.5 + sp * 1.5, 0, 7); c.fill(); c.restore();
+            // Golden key lying point-down, tucked behind the bookshelf so only the tip shows.
+            c.save(); c.translate(x, y); c.rotate(Math.PI / 2 - .15); c.lineWidth = 3; c.strokeStyle = '#7a5200'; c.fillStyle = '#ffc107';
+            c.beginPath(); c.arc(-14, 0, 6, 0, 7); c.fill(); c.stroke(); c.fillRect(-9, -2, 24, 4); c.strokeRect(-9, -2, 24, 4); c.fillRect(8, 2, 4, 6); c.strokeRect(8, 2, 4, 6); c.fillRect(13, 2, 4, 5); c.strokeRect(13, 2, 4, 5);
+            c.fillStyle = '#fff3a0'; c.fillRect(-8, -1, 22, 1.5);
+            const sp = (Math.sin(now / 300) + 1) / 2; c.fillStyle = 'rgba(255,255,255,' + (.4 + sp * .5) + ')'; c.beginPath(); c.arc(-19, -5, 1.5 + sp * 1.5, 0, 7); c.fill(); c.restore();
         }
         function tStairs(c, x, y, up) {
             c.save(); c.translate(x, y); c.lineWidth = 3; c.strokeStyle = '#2b2d42';
@@ -10822,12 +10822,12 @@
             m.wall = { x0: -1e5, x1: 1e5, col: F.wl, dado: F.dd };
             const arts = ['slime', 'tree', 'heart', 'star', 'sun'];
             rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) { const k = row[c], q = T(c, r), f = GK[k];
-                if (f) { const Fu = FURN_BY[f]; if (Fu.s) addC(m, q.x, q.y + 6, 26); addT(m, Fu.s ? q.y + 24 : f === 'rug' ? -6e8 : -5e8, cc => drawFurn(cc, Fu, q.x, q.y, 1)); }
+                if (f) { const Fu = FURN_BY[f]; if (Fu.s) addC(m, q.x, q.y + 6, 26); addT(m, f === 'rug' ? -6e8 : Fu.s ? q.y + 24 : -5e8, cc => drawFurn(cc, Fu, q.x, q.y, 1)); }
                 else if (k === 'c') { addC(m, q.x, q.y + 6, 14); addT(m, q.y + 20, (cc, now) => tCandle(cc, q.x, q.y, now)); m.lights.push({ x: q.x, y: q.y - 8, r: 135 }); }
                 else if (k === 'S') { addT(m, -5e8, (cc, now) => tSigil(cc, q.x, q.y, now)); m.lights.push({ x: q.x, y: q.y, r: 175 }); }
                 else if (k === 'x') { m.npcs = m.npcs || []; const i = m.npcs.length; m.npcs.push({ n: 'Hooded Slime', skin: 'corrupted', hat: null, x: q.x, y: q.y, say: CULT[i % CULT.length] }); addC(m, q.x, q.y + 6, 22); addT(m, q.y + 24, (cc, now) => tCultist(cc, q.x, q.y, now, i * 1.7)); }
                 else if (k === 'n') { const sl = hz.slime; (m.npcs = m.npcs || []).push({ n: sl.n, skin: sl.skin, hat: sl.hat, x: q.x, y: q.y, say: hz.say }); addC(m, q.x, q.y + 6, 24); addT(m, q.y + 24, (cc, now) => tNpc(cc, q.x, q.y, sl.skin, sl.hat, now)); } } });
-            if (hz.key && fk === hz.key.floor) { const q = T(hz.key.c, hz.key.r); m.keyPos = { x: q.x - 38, y: q.y - 4 }; addT(m, q.y + 26, (cc, now) => { if (!tKey) tKeySprite(cc, q.x - 24, q.y - 4, now); }); addT(m, 1e9 - 1, cc => tBubble(cc, tp.x, tp.y - 50, tKeyB)); }
+            if (hz.key && fk === hz.key.floor) { const q = T(hz.key.c, hz.key.r); m.keyPos = { x: q.x + 12, y: q.y + 40 }; addT(m, q.y + 20, (cc, now) => { if (!tKey) tKeySprite(cc, q.x + 10, q.y + 18, now); }); addT(m, 1e9 - 1, cc => tBubble(cc, tp.x, tp.y - 50, tKeyB)); }
             if (F.dark) addT(m, 1e9, (cc, now) => tDarkness(cc, m, now));
             m.art = []; if (!F.nowin) m.walls.forEach(w => { if ((w.c + w.r) % 4 === 1) m.art.push([w.x, arts[(w.c * 3 + w.r) % 5], w.y]); });
             return finish(m, 140);
@@ -10845,7 +10845,7 @@
             const W = { x0: T(0, 0).x - 46, x1: T(N - 1, 0).x + 46 }; m.wall = Object.assign(W, { col: { home: '#ecd9b0', trophy: '#e4e0f0', gacha: '#fbd9e8', furn: '#d4e4f7' }[id], dado: { home: '#8d6038', trophy: '#7a6aa8', gacha: '#c94b8c', furn: '#3a6ab0' }[id] });
             if (hz) { m.tiles.forEach(t => { if (t.t === 'i') t.col = (t.q + Math.floor(t.r / 2) + t.r) % 2 ? hz.fl[0] : hz.fl[1]; }); m.wall.col = hz.wl; m.wall.dado = hz.dd; }
             const mid = (T(0, 0).x + T(N - 1, 0).x) / 2;
-            const D = (k, c, r) => { const q = T(c, r), F = FURN_BY[k]; if (F.s) addC(m, q.x, q.y + 6, 26); addT(m, F.s ? q.y + 24 : k === 'rug' ? -6e8 : -5e8, cc => drawFurn(cc, F, q.x, q.y, 1)); };
+            const D = (k, c, r) => { const q = T(c, r), F = FURN_BY[k]; if (F.s) addC(m, q.x, q.y + 6, 26); addT(m, k === 'rug' ? -6e8 : F.s ? q.y + 24 : -5e8, cc => drawFurn(cc, F, q.x, q.y, 1)); };
             if (id === 'home') {
                 seedHome(); m.defs = []; m.wins = []; m.art = []; const DF = (idx, x, y, w, h) => m.defs.push({ idx, x, y, w, h }), mirs = [];
                 homeList().forEach((f, idx) => {
@@ -10857,7 +10857,7 @@
                         return;
                     }
                     const t = m.land.get(hexKey(f.q, f.r)); if (!t) return;
-                    if (F.s) addC(m, t.x, t.y + 6, 26); addT(m, F.s ? t.y + 24 : f.id === 'rug' ? -6e8 : -5e8, c => drawFurn(c, F, t.x, t.y, 1));
+                    if (F.s) addC(m, t.x, t.y + 6, 26); addT(m, f.id === 'rug' ? -6e8 : F.s ? t.y + 24 : -5e8, c => drawFurn(c, F, t.x, t.y, 1));
                     if (f.id === 'bed') DF(idx, t.x - 44, t.y - 24, 150, 120);
                 });
                 if (mirs.length) m.wallFn = c => mirs.forEach(x => tMirror(c, x, -88));
@@ -11246,7 +11246,7 @@
         function tCloseDlg() { clearInterval(tDlgTimer); tDlgTyping = false; tDlgNpc = null; tDlgMouth = 0; document.getElementById('town-dlg').style.display = 'none'; tDlgOpen = false; }
         window.addEventListener('pointerdown', e => { if (tDlgOpen) { if (tDlgTyping) { clearInterval(tDlgTimer); tDlgTyping = false; tDlgMouth = 0; document.getElementById('dlg-text').textContent = tDlgMsg; } else tCloseDlg(); e.stopPropagation(); e.preventDefault(); } }, true);
         function tApply(m) {
-            tCloseDlg();
+            tCloseDlg(); player.hazardTimer = 0; document.getElementById('hazard-warning').style.display = 'none'; updateHazardVignette(0);
             hexTiles = m.land; landHexList = m.tiles.filter(t => t.type !== 'hole'); holeHexList = m.tiles.filter(t => t.type === 'hole'); borderHexList = [];
             items = []; enemies = []; trees = []; hives = []; decorations = []; projectiles = []; icicles = []; iceBlocks = []; flameParticles = []; leaves = []; splashes = []; powerups = [];
             chest = null; fishingScene = null; skeletonChests = []; surviveChests = []; skinTrader = null; goldTrader = null; docks = []; fences = []; companions = []; royalJellySlimes = []; acidTrail = [];
@@ -11257,7 +11257,7 @@
         // ---- movement / interaction
         function tBlk(x, y) {
             const m = tmap;
-            for (const [a, b] of [[-11, -4], [11, -4], [-11, 5], [11, 5]]) { const p = pixelToAxial(x + a, y + b), t = m.land.get(hexKey(p.q, p.r)); if (tloc !== 'town' && (!t || t.t === 'w' || t.t === 'z')) { tHit = null; return true; } }
+            for (const [a, b] of [[-11, -4], [11, -4], [-11, 5], [11, 5]]) { const p = pixelToAxial(x + a, y + b), t = m.land.get(hexKey(p.q, p.r)); if (!t && tloc !== 'town') { tHit = null; return true; } }
             for (const o of m.obs) if (o.k === 'c' ? ((x - o.x) ** 2 + (y - o.y) ** 2 < (o.r + 10) ** 2) : (x + 10 > o.x && x - 10 < o.x + o.w && y + 5 > o.y && y - 5 < o.y + o.h)) { tHit = o; return true; }
             return false;
         }
@@ -11310,12 +11310,17 @@
             player.worldX = x; player.worldY = y;
             if (hit && hit.act && performance.now() > tBump) tAct(hit.act);
         }
+        // Town hazards: sky, water and sludge only "kill" after 5 seconds, via the shared tickHazard
+        // above, and the penalty is being sent back to the house.
+        function townHazard() {
+            const warnUI = document.getElementById('hazard-warning');
+            if (tloc !== 'town' || tFadeDir || tFade || tDeco) { if (player.hazardTimer) { player.hazardTimer = 0; warnUI.style.display = 'none'; updateHazardVignette(0); } return; }
+            tickHazard(warnUI, 5, () => { player.hazardTimer = 0; warnUI.style.display = 'none'; updateHazardVignette(0); tGo('home', 'town'); });
+        }
         function townPre() {
             const modalOpen = [...document.querySelectorAll('.modal')].some(m => m.style.display === 'block');
             if (modalOpen || tFadeDir === 1 || tDeco || tDlgOpen) { player.vx = 0; player.vy = 0; }
             else { const ax = (tKeys.ArrowRight || tKeys.d ? 1 : 0) - (tKeys.ArrowLeft || tKeys.a ? 1 : 0), ay = (tKeys.ArrowDown || tKeys.s ? 1 : 0) - (tKeys.ArrowUp || tKeys.w ? 1 : 0); if (ax || ay) { const l = Math.hypot(ax, ay); player.vx += ax / l * .5; player.vy += ay / l * .5; } }
-            if (tloc === 'town' && !tFadeDir && !tFade && !tDeco) updatePlayerHazard(5, () => tGo('home', 'town'));
-            else if (player.hazardTimer) { player.hazardTimer = 0; document.getElementById('hazard-warning').style.display = 'none'; updateHazardVignette(0); }
             if (tFadeDir) {
                 tFade += tFadeDir * 0.07;
                 if (tFadeDir > 0 && tFade >= 1) { tFade = 1; const cb = tFadeCb; tFadeCb = null; if (cb) cb(); if (townActive) tFadeDir = -1; else { tFadeDir = 0; tFade = 0; return; } }
