@@ -2978,7 +2978,7 @@
         function isSafe(x, y) {
             let h = pixelToAxial(x, y);
             let tile = hexTiles.get(hexKey(h.q, h.r));
-            return !!tile && tile.type === 'land';
+            return !!tile && tile.type === 'land' && !(townActive && tile.t === 'z');
         }
 
         // True only for the open sky beyond the map's edge (no tile at all) - unlike isSafe,
@@ -6273,6 +6273,20 @@
             }
         }
 
+        // The one hazard routine: hovering over a hazard (or open sky) builds hazardTimer, shows the
+        // warning + vignette, and calls onFall() once it reaches hazardLimit seconds. Used by the
+        // levels (game over) and by the town (sent home, with a longer limit).
+        function updatePlayerHazard(hazardLimit, onFall) {
+            let warnUI = document.getElementById('hazard-warning');
+            if (!isSafe(player.worldX, player.worldY) && !isOnDock(player.worldX, player.worldY) && !isPlayerInvulnerable()) {
+                if (player.hazardTimer === 0) spawnSplash(player.worldX, player.worldY);
+                player.hazardTimer += 1/60;
+                if (player.hazardTimer > 0.2) warnUI.style.display = 'block';
+                updateHazardVignette(player.hazardTimer / hazardLimit);
+                if (player.hazardTimer >= hazardLimit) onFall();
+            } else { player.hazardTimer = 0; warnUI.style.display = 'none'; updateHazardVignette(0); }
+        }
+
         // Drives the dramatic "10, 9, 8..." countdown in the final ten seconds of the level timer,
         // plus the danger stinger that goes with it. The countdown pop only restarts when the
         // displayed second actually changes; setMusicDanger() itself no-ops on repeat calls, so
@@ -6867,13 +6881,7 @@
                     // Roguelite: Wings item extends how long you can hover over a hazard before falling.
                     let wingsStacks = runItems.wings || 0;
                     let hazardLimit = 1.25 + (wingsStacks > 0 ? 0.5 + (wingsStacks - 1) * 0.25 : 0);
-                    if (!isSafe(player.worldX, player.worldY) && !isOnDock(player.worldX, player.worldY) && !isPlayerInvulnerable()) {
-                        if (player.hazardTimer === 0) spawnSplash(player.worldX, player.worldY);
-                        player.hazardTimer += 1/60;
-                        if (player.hazardTimer > 0.2) warnUI.style.display = 'block';
-                        updateHazardVignette(player.hazardTimer / hazardLimit);
-                        if (player.hazardTimer >= hazardLimit) triggerGameOver('hazard');
-                    } else { player.hazardTimer = 0; warnUI.style.display = 'none'; updateHazardVignette(0); }
+                    updatePlayerHazard(hazardLimit, () => triggerGameOver('hazard'));
 
                     if (!isBossGauntletLevel || bossGauntletUnlocked) {
                         timeLeft -= 1/60;
@@ -11302,24 +11310,12 @@
             player.worldX = x; player.worldY = y;
             if (hit && hit.act && performance.now() > tBump) tAct(hit.act);
         }
-        // Town hazards: open sky, pond water and sludge can be entered, but after TOWN_HAZ_LIMIT seconds
-        // the player falls and is sent back home. Reuses the main game's splash/vignette/warning.
-        const TOWN_HAZ_LIMIT = 5; let tHaz = 0;
-        function tHazClear() { tHaz = 0; const w = document.getElementById('hazard-warning'); if (w) w.style.display = 'none'; updateHazardVignette(0); }
-        function tHazStep() {
-            if (tloc !== 'town' || tFadeDir || tFade || tDeco) { if (tHaz) tHazClear(); return; }
-            const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r));
-            if (t && t.t !== 'w' && t.t !== 'z') { if (tHaz) tHazClear(); return; }
-            if (tHaz === 0) spawnSplash(tp.x, tp.y);
-            tHaz += 1 / 60; const w = document.getElementById('hazard-warning'); if (tHaz > .2 && w) w.style.display = 'block';
-            updateHazardVignette(tHaz / TOWN_HAZ_LIMIT);
-            if (tHaz >= TOWN_HAZ_LIMIT) { tHazClear(); tHaz = 0; tGo('home', 'town'); }
-        }
         function townPre() {
             const modalOpen = [...document.querySelectorAll('.modal')].some(m => m.style.display === 'block');
             if (modalOpen || tFadeDir === 1 || tDeco || tDlgOpen) { player.vx = 0; player.vy = 0; }
             else { const ax = (tKeys.ArrowRight || tKeys.d ? 1 : 0) - (tKeys.ArrowLeft || tKeys.a ? 1 : 0), ay = (tKeys.ArrowDown || tKeys.s ? 1 : 0) - (tKeys.ArrowUp || tKeys.w ? 1 : 0); if (ax || ay) { const l = Math.hypot(ax, ay); player.vx += ax / l * .5; player.vy += ay / l * .5; } }
-            tHazStep();
+            if (tloc === 'town' && !tFadeDir && !tFade && !tDeco) updatePlayerHazard(5, () => tGo('home', 'town'));
+            else if (player.hazardTimer) { player.hazardTimer = 0; document.getElementById('hazard-warning').style.display = 'none'; updateHazardVignette(0); }
             if (tFadeDir) {
                 tFade += tFadeDir * 0.07;
                 if (tFadeDir > 0 && tFade >= 1) { tFade = 1; const cb = tFadeCb; tFadeCb = null; if (cb) cb(); if (townActive) tFadeDir = -1; else { tFadeDir = 0; tFade = 0; return; } }
