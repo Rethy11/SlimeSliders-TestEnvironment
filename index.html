@@ -11,7 +11,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Slime Sliders</title>
 
-    <!-- Open Graph /  social link previews. og-image.PNG lives alongside index.html in the
+    <!-- Open Graph / social link previews. og-image.PNG lives alongside index.html in the
          rethy11.github.io/Slime-Sliders GitHub Pages repo, so it's referenced by its absolute
          GitHub Pages URL (relative paths aren't reliably resolved by link-preview crawlers). -->
     <meta property="og:type" content="website">
@@ -751,11 +751,14 @@
         <div id="town-dlg"><div id="dlg-name"></div><canvas id="dlg-face" width="80" height="80"></canvas><div id="dlg-text"></div><div id="dlg-next">&#9660;</div></div>
     </div>
 
-    <div id="ui-layer">
+    <!-- hazard vignette + warning live outside #ui-layer (which is display:none in Slime Town) so the town hazard can show them -->
+    <div id="hazard-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;">
         <div id="hazard-vignette"></div>
+        <div id="hazard-warning">HAZARD</div>
+    </div>
+    <div id="ui-layer">
         <div id="devildeal-flash"></div>
         <div id="timer-container"><div id="timer-fill"></div><div id="timer-lock-icon">🔒</div></div>
-        <div id="hazard-warning">HAZARD</div>
         <div id="survive-announcement">Survive!</div>
         <div id="time-countdown"></div>
         <div id="powerup-indicator"><div id="pu-fill"></div><div id="pu-content"><img class="pu-icon icon-img" id="pu-icon" style="width:1.3rem;height:1.3rem;" alt=""><span id="pu-desc"></span></div></div>
