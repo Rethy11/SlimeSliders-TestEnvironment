@@ -744,6 +744,8 @@
     </div>
 
     <canvas id="gameCanvas"></canvas>
+    <div id="hazard-vignette"></div>
+    <div id="hazard-warning">HAZARD</div>
     <div id="town-hud">
         <button id="town-hanger" class="hud-panel tib" aria-label="Change clothes"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8.2a2.6 2.6 0 1 0-2.6-2.6"/><path d="M12 8.2v2.3L3.4 16.6a1.7 1.7 0 0 0 1 3.1h15.2a1.7 1.7 0 0 0 1-3.1L12 10.5"/></svg></button><button id="town-pencil" class="hud-panel tib" aria-label="Decorate"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg></button><div id="town-coins" class="hud-panel"></div>
         <button id="town-exit" class="menu-btn">Exit</button><button id="town-save" class="menu-btn">Save</button>
@@ -752,10 +754,8 @@
     </div>
 
     <div id="ui-layer">
-        <div id="hazard-vignette"></div>
         <div id="devildeal-flash"></div>
         <div id="timer-container"><div id="timer-fill"></div><div id="timer-lock-icon">🔒</div></div>
-        <div id="hazard-warning">HAZARD</div>
         <div id="survive-announcement">Survive!</div>
         <div id="time-countdown"></div>
         <div id="powerup-indicator"><div id="pu-fill"></div><div id="pu-content"><img class="pu-icon icon-img" id="pu-icon" style="width:1.3rem;height:1.3rem;" alt=""><span id="pu-desc"></span></div></div>
@@ -9879,7 +9879,8 @@
         
                     if (gameState === 'title' || gameState === 'game_over') {
                         document.getElementById('ui-layer').style.display = 'none';
-                        document.getElementById('hazard-warning').style.display = 'none';
+                        // The town reuses the hazard warning/vignette, so it must not be force-hidden there.
+                        if (!townActive) document.getElementById('hazard-warning').style.display = 'none';
                     }
                     
                     // requestAnimationFrame(draw) removed! It is now handled centrally in Section 9.
@@ -11245,7 +11246,7 @@
         // ---- movement / interaction
         function tBlk(x, y) {
             const m = tmap;
-            for (const [a, b] of [[-11, -4], [11, -4], [-11, 5], [11, 5]]) { const p = pixelToAxial(x + a, y + b), t = m.land.get(hexKey(p.q, p.r)); if (!t || t.t === 'w' || t.t === 'z') { tHit = null; return true; } }
+            for (const [a, b] of [[-11, -4], [11, -4], [-11, 5], [11, 5]]) { const p = pixelToAxial(x + a, y + b), t = m.land.get(hexKey(p.q, p.r)); if (!t || t.t === 'w' || t.t === 'z') { if (tloc === 'town') continue; tHit = null; return true; } }
             for (const o of m.obs) if (o.k === 'c' ? ((x - o.x) ** 2 + (y - o.y) ** 2 < (o.r + 10) ** 2) : (x + 10 > o.x && x - 10 < o.x + o.w && y + 5 > o.y && y - 5 < o.y + o.h)) { tHit = o; return true; }
             return false;
         }
@@ -11298,6 +11299,25 @@
             player.worldX = x; player.worldY = y;
             if (hit && hit.act && performance.now() > tBump) tAct(hit.act);
         }
+        // Town hazards: open sky, water and sludge behave exactly like a level's hazard holes - the
+        // slime can hover over them for the same 1.25s, the shared HAZARD warning + red vignette
+        // build up, and then it falls and is put back on the last solid ground it stood on.
+        const tLastSafe = { x: 0, y: 0 };
+        function tHazard(paused) {
+            const warn = domRefs.hazardWarning, clear = () => { player.hazardTimer = 0; warn.style.display = 'none'; updateHazardVignette(0); };
+            if (tloc !== 'town') { if (player.hazardTimer) clear(); return; }
+            const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)), over = !t || t.t === 'w' || t.t === 'z';
+            if (!over) { tLastSafe.x = tp.x; tLastSafe.y = tp.y; if (player.hazardTimer) clear(); return; }
+            if (paused || tFadeDir || tFade) { if (player.hazardTimer) clear(); return; }
+            if (player.hazardTimer === 0) spawnSplash(tp.x, tp.y);
+            player.hazardTimer += 1 / 60;
+            if (player.hazardTimer > 0.2) warn.style.display = 'block';
+            updateHazardVignette(player.hazardTimer / 1.25);
+            if (player.hazardTimer >= 1.25) {
+                clear(); tFadeDir = 1;
+                tFadeCb = () => { tp.x = tLastSafe.x; tp.y = tLastSafe.y; tp.vx = tp.vy = 0; tp.jx = tp.jy = 0; tSnap(); };
+            }
+        }
         function townPre() {
             const modalOpen = [...document.querySelectorAll('.modal')].some(m => m.style.display === 'block');
             if (modalOpen || tFadeDir === 1 || tDeco || tDlgOpen) { player.vx = 0; player.vy = 0; }
@@ -11318,6 +11338,7 @@
                     } else { const q = pixelToAxial(tp.x, tp.y), t = tmap.land.get(hexKey(q.q, q.r)); if (t && t.t === 'm') tGo(t.to || 'town', tloc); }
                 }
             }
+            tHazard(modalOpen);
             const ce = document.getElementById('town-coins'), cs = String(totalCoins);
             if (ce.dataset.v !== cs) { ce.dataset.v = cs; ce.innerHTML = '<img class="icon-img" style="width:1em;height:1em;vertical-align:-2px" src="' + iconDataURL('coin', 22) + '" alt=""> ' + cs; }
         }
